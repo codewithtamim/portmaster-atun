@@ -66,7 +66,7 @@ func refreshIfaceCache() error {
 	ifaceCacheRefreshError = nil
 	ifaceCacheDontRefreshUntil = time.Now().Add(1 * time.Second)
 
-	ifaces, err := net.Interfaces()
+	ifaces, err := osGetNetworkInterfaces()
 	if err != nil {
 		ifaceCacheRefreshError = err
 		return fmt.Errorf("failed to enumerate network interfaces: %w", err)
@@ -88,7 +88,7 @@ func refreshIfaceCache() error {
 			macStr: ifaces[i].HardwareAddr.String(),
 		}
 
-		addrs, addrErr := ifaces[i].Addrs()
+		addrs, addrErr := osGetAddrsForInterface(&ifaces[i])
 		if addrErr != nil {
 			log.Warningf("netenv: failed to get addresses for interface %s: %v", ifaces[i].Name, addrErr)
 		} else {
@@ -480,12 +480,13 @@ func interfaceToInfo(iface *net.Interface) *InterfaceInfo {
 	return buildInterfaceInfoDirect(iface)
 }
 
-// buildInterfaceInfoDirect constructs an InterfaceInfo by calling iface.Addrs()
-// directly, without using the cache. Used as a fallback when the cache is
-// unavailable. Uses the same isRoutableUnicastIP predicate as refreshIfaceCache.
+// buildInterfaceInfoDirect constructs an InterfaceInfo by calling
+// osGetAddrsForInterface directly, without using the cache. Used as a
+// fallback when the cache is unavailable. Uses the same isRoutableUnicastIP
+// predicate as refreshIfaceCache.
 func buildInterfaceInfoDirect(iface *net.Interface) *InterfaceInfo {
 	info := &InterfaceInfo{Interface: iface}
-	addrs, err := iface.Addrs()
+	addrs, err := osGetAddrsForInterface(iface)
 	if err != nil {
 		return info
 	}
@@ -532,7 +533,7 @@ func buildInterfaceInfoDirect(iface *net.Interface) *InterfaceInfo {
 // Checking the address is the final confirmation that the interface can
 // actually forward packets.
 func hasRoutableIPv4(iface *net.Interface) bool {
-	addrs, err := iface.Addrs()
+	addrs, err := osGetAddrsForInterface(iface)
 	if err != nil {
 		return false
 	}
@@ -559,7 +560,7 @@ func hasRoutableIPv4(iface *net.Interface) bool {
 // that is globally routable — not unspecified (::), loopback (::1),
 // or link-local (fe80::/10).
 func hasRoutableIPv6(iface *net.Interface) bool {
-	addrs, err := iface.Addrs()
+	addrs, err := osGetAddrsForInterface(iface)
 	if err != nil {
 		return false
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/safing/portmaster/service/network/netutils"
 	"github.com/safing/portmaster/service/network/packet"
 	"github.com/safing/portmaster/service/network/reference"
-	"github.com/safing/portmaster/service/network/state"
 	"github.com/safing/portmaster/service/profile"
 )
 
@@ -49,6 +48,17 @@ func GetProcessWithProfile(ctx context.Context, pid int) (process *Process, err 
 	return process, err
 }
 
+// GetProcessWithProfileByOwner returns the process that owns the described
+// connection, including the profile.
+//
+// It uses the platform's owner identity: the UID on Android, where no usable
+// PID exists, and the PID everywhere else.
+// Always returns valid data.
+// Errors are logged and returned for information or special handling purposes.
+func GetProcessWithProfileByOwner(ctx context.Context, pktInfo *packet.Info) (process *Process, err error) {
+	return getProcessWithProfileByOwner(ctx, pktInfo)
+}
+
 // GetPidOfConnection returns the PID of the process that owns the described connection.
 // Always returns valid data.
 // Errors are logged and returned for information or special handling purposes.
@@ -65,7 +75,7 @@ func GetPidOfConnection(ctx context.Context, pktInfo *packet.Info) (pid int, con
 	// Check if we need to get the PID.
 	if pktInfo.PID == UndefinedProcessID {
 		log.Tracer(ctx).Tracef("process: getting pid from system network state")
-		pid, connInbound, err = state.Lookup(pktInfo, fastSearch)
+		pid, connInbound, err = lookupConnectionOwner(ctx, pktInfo, fastSearch)
 		if err != nil {
 			err = fmt.Errorf("failed to find PID of connection: %w", err)
 			log.Tracer(ctx).Tracef("process: %s", err)
@@ -149,12 +159,12 @@ func GetProcessByRequestOrigin(ar *api.Request) (*Process, error) {
 		PID:      UndefinedProcessID,
 	}
 
-	pid, _, err := GetPidOfConnection(ar.Context(), pkt)
+	pkt.PID, _, err = GetPidOfConnection(ar.Context(), pkt)
 	if err != nil {
 		return nil, err
 	}
 
-	proc, err := GetProcessWithProfile(ar.Context(), pid)
+	proc, err := GetProcessWithProfileByOwner(ar.Context(), pkt)
 	if err != nil {
 		return nil, err
 	}

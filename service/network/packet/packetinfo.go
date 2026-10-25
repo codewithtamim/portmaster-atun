@@ -18,6 +18,11 @@ type Info struct {
 
 	PID    int
 	SeenAt time.Time
+
+	// UID is the Android app that owns the connection, or nil if unknown.
+	// Android identifies apps by UID because no usable PID exists.
+	// Always nil on other platforms.
+	UID *int
 }
 
 // LocalIP returns the local IP of the packet.

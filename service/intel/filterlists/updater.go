@@ -86,6 +86,10 @@ func performUpdate(ctx context.Context) error {
 		return nil
 	}
 
+	// Android reports byte progress for the cache import; no-ops elsewhere.
+	beginCacheLoad(upgradables)
+	defer endCacheLoad()
+
 	cleanupRequired := false
 	filterToUpdate := defaultFilter
 

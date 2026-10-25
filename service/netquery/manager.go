@@ -219,6 +219,7 @@ func convertConnection(conn *network.Connection) (*Conn, error) {
 		"pid":              conn.ProcessContext.PID,
 		"processCreatedAt": conn.ProcessContext.CreatedAt,
 	}
+	addPlatformExtraData(extraData, conn)
 
 	if conn.TunnelContext != nil {
 		extraData["tunnel"] = conn.TunnelContext
@@ -245,7 +246,7 @@ func convertConnection(conn *network.Connection) (*Conn, error) {
 		extraData["blockedEntities"] = conn.Entity.BlockedEntities
 		extraData["reason"] = conn.Reason
 
-		c.RemoteIP = conn.Entity.IP.String()
+		c.RemoteIP = storedRemoteIP(conn.Entity.IP)
 		c.RemotePort = conn.Entity.Port
 		c.Domain = conn.Entity.Domain
 		c.Country = conn.Entity.Country

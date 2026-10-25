@@ -35,11 +35,13 @@ import (
 	"github.com/safing/portmaster/service/process"
 	"github.com/safing/portmaster/service/profile"
 	"github.com/safing/portmaster/service/resolver"
+	"github.com/safing/portmaster/service/routing"
 	"github.com/safing/portmaster/service/splittun"
 	"github.com/safing/portmaster/service/status"
 	"github.com/safing/portmaster/service/sync"
 	"github.com/safing/portmaster/service/ui"
 	"github.com/safing/portmaster/service/updates"
+	"github.com/safing/portmaster/service/wireguard"
 	"github.com/safing/portmaster/spn/access"
 	"github.com/safing/portmaster/spn/cabin"
 	"github.com/safing/portmaster/spn/captain"
@@ -85,6 +87,8 @@ type Instance struct {
 	integration   *integration.OSIntegration
 	geoip         *geoip.GeoIP
 	netenv        *netenv.NetEnv
+	routing       *routing.Routing
+	wireguard     *wireguard.WireGuard
 	ui            *ui.UI
 	profile       *profile.ProfileModule
 	network       *network.Network
@@ -209,6 +213,17 @@ func New(svcCfg *ServiceConfig) (*Instance, error) { //nolint:maintidx
 	instance.netenv, err = netenv.New(instance)
 	if err != nil {
 		return instance, fmt.Errorf("create netenv module: %w", err)
+	}
+	// Routing and WireGuard carry the Android routing target. On other
+	// platforms they are inert and return a nil manager, so the service group
+	// below skips them: they are never started.
+	instance.routing, err = routing.New(instance)
+	if err != nil {
+		return instance, fmt.Errorf("create routing module: %w", err)
+	}
+	instance.wireguard, err = wireguard.New(instance)
+	if err != nil {
+		return instance, fmt.Errorf("create wireguard module: %w", err)
 	}
 	instance.ui, err = ui.New(instance)
 	if err != nil {
@@ -354,6 +369,8 @@ func New(svcCfg *ServiceConfig) (*Instance, error) { //nolint:maintidx
 		instance.integration,
 		instance.geoip,
 		instance.netenv,
+		instance.routing,
+		instance.wireguard,
 
 		instance.process,
 		instance.profile,
@@ -373,7 +390,8 @@ func New(svcCfg *ServiceConfig) (*Instance, error) { //nolint:maintidx
 		// 		instance.interception,
 		// 		instance.dnsmonitor,
 		// 		instance.compat
-		instance.serviceGroupInterception,
+		// A placeholder on Android: the TUN fd is not available until StartTun.
+		interceptionModuleForServiceGroup(instance.serviceGroupInterception),
 
 		instance.status,
 		instance.broadcasts,
@@ -508,6 +526,16 @@ func (i *Instance) GeoIP() *geoip.GeoIP {
 // NetEnv returns the netenv module.
 func (i *Instance) NetEnv() *netenv.NetEnv {
 	return i.netenv
+}
+
+// Routing returns the routing module.
+func (i *Instance) Routing() *routing.Routing {
+	return i.routing
+}
+
+// WireGuard returns the wireguard module.
+func (i *Instance) WireGuard() *wireguard.WireGuard {
+	return i.wireguard
 }
 
 // Access returns the access module.
@@ -662,6 +690,11 @@ func (i *Instance) GetEventSPNConnected() *mgr.EventMgr[struct{}] {
 	return i.captain.EventSPNConnected
 }
 
+// SPNReady reports whether the SPN client can tunnel connections.
+func (i *Instance) SPNReady() bool {
+	return captain.ClientReady()
+}
+
 func (i *Instance) GetHookSPNConnecting() *mgr.HookMgr[hub.Announcement] {
 	return i.captain.HookSPNConnecting
 }
@@ -704,6 +737,8 @@ func (i *Instance) Start() error {
 
 // Stop stops the instance modules.
 func (i *Instance) Stop() error {
+	// Android stops the TUN group first. Desktop does nothing here.
+	stopInterceptionGroup(i)
 	return i.serviceGroup.Stop()
 }
 

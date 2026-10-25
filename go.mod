@@ -1,8 +1,8 @@
 module github.com/safing/portmaster
 
-go 1.26.0
+go 1.26.3
 
-toolchain go1.26.3
+toolchain go1.26.5
 
 require (
 	github.com/VictoriaMetrics/metrics v1.40.2
@@ -15,8 +15,9 @@ require (
 	github.com/bluele/gcache v0.0.2
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
 	github.com/cilium/ebpf v0.20.0
+	github.com/cockroachdb/pebble/v2 v2.1.7
 	github.com/coreos/go-iptables v0.8.0
-	github.com/davecgh/go-spew v1.1.1
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/dgraph-io/badger v1.6.2
 	github.com/florianl/go-conntrack v0.4.0
 	github.com/florianl/go-nfqueue v1.3.2
@@ -70,16 +71,44 @@ require (
 	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
+	golang.org/x/time v0.15.0
+	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 	gopkg.in/yaml.v3 v3.0.1
+	gvisor.dev/gvisor v0.0.0-20260919055340-501da953ee38
 	modernc.org/sqlite v1.40.1
 	zombiezen.com/go/sqlite v1.4.2
 )
 
 require (
 	dario.cat/mergo v1.0.1 // indirect
+	github.com/DataDog/zstd v1.5.7 // indirect
+	github.com/RaduBerinde/axisds v0.1.0 // indirect
+	github.com/RaduBerinde/btreemap v0.0.0-20250419174037-3d62b7205d54 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cockroachdb/crlib v0.0.0-20241112164430-1264a2edc35b // indirect
+	github.com/cockroachdb/errors v1.11.3 // indirect
+	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
+	github.com/cockroachdb/redact v1.1.5 // indirect
+	github.com/cockroachdb/swiss v0.0.0-20260820225851-333444432258 // indirect
+	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
+	github.com/getsentry/sentry-go v0.27.0 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/snappy v0.0.5-0.20231225225746-43d5d4cd4e0e // indirect
+	github.com/google/btree v1.1.2 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/minio/minlz v1.0.1-0.20250507153514-87eb42fe8882 // indirect
+	github.com/prometheus/client_golang v1.16.0 // indirect
+	github.com/prometheus/client_model v0.3.0 // indirect
+	github.com/prometheus/common v0.42.0 // indirect
+	github.com/prometheus/procfs v0.10.1 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/stephenafamo/sqlparser v0.0.0-20250521201114-5cfed001272d // indirect
+	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )
 
 require (

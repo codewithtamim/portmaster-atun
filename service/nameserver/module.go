@@ -18,6 +18,7 @@ import (
 	"github.com/safing/portmaster/service/compat"
 	"github.com/safing/portmaster/service/firewall"
 	"github.com/safing/portmaster/service/mgr"
+	"github.com/safing/portmaster/service/nameserver/nsutil"
 	"github.com/safing/portmaster/service/netenv"
 )
 
@@ -162,6 +163,7 @@ func startListener(ip net.IP, port uint16, first bool) {
 		started := false
 		dnsServer.NotifyStartedFunc = func() {
 			started = true
+			nsutil.SetBoundAddress(boundNameserverAddr(dnsServer))
 			deleteListenErrorNotification(first)
 		}
 
@@ -366,3 +368,16 @@ func New(instance instance) (*NameServer, error) {
 }
 
 type instance interface{}
+
+func boundNameserverAddr(s *dns.Server) string {
+	if s == nil {
+		return ""
+	}
+	if s.PacketConn != nil && s.PacketConn.LocalAddr() != nil {
+		return s.PacketConn.LocalAddr().String()
+	}
+	if s.Listener != nil && s.Listener.Addr() != nil {
+		return s.Listener.Addr().String()
+	}
+	return ""
+}

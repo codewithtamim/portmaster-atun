@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/base/utils/aprotect"
 	"github.com/safing/portmaster/service/mgr"
 	"github.com/safing/portmaster/service/network/netutils"
 	"github.com/safing/portmaster/service/network/packet"
@@ -282,12 +283,12 @@ func (op *ConnectOp) setup(session *terminal.Session) {
 		op.Stop(op, terminal.ErrIncorrectUsage.With("protocol %s is not supported", op.request.Protocol))
 		return
 	}
-	dialer := &net.Dialer{
+	dialer := aprotect.ApplyToDialer(&net.Dialer{
 		Timeout:       10 * time.Second,
 		LocalAddr:     conf.GetBindAddr(dialNet),
 		FallbackDelay: -1, // Disables Fast Fallback from IPv6 to IPv4.
 		KeepAlive:     -1, // Disable keep-alive.
-	}
+	})
 	conn, err := dialer.DialContext(op.Ctx(), dialNet, op.request.Address())
 	if err != nil {
 		// Connection errors are common, but still a bit suspicious.

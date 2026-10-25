@@ -68,7 +68,7 @@ func handleResetState(ar *api.Request) (msg string, err error) {
 		return "", err
 	}
 
-	_ = db.Delete(ivpn.Notification_DB_ID_IvpnDetectSuppressed)
+	_ = db.Delete(ivpn.NotificationDBIDIvpnDetectSuppressed)
 	_ = db.Delete(resolver.Notification_DB_ID_StaleCacheSuppressed)
 
 	return "Reset complete. Some notifications require a restart to reappear.", nil

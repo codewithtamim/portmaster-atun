@@ -39,20 +39,26 @@ func (st *SleepyTicker) Stop() {
 }
 
 // SetSleep sets the sleep mode of the ticker. If enabled is true, the ticker will tick with sleepDuration. If enabled is false, the ticker will tick with normalDuration.
+//
+// A sleepDuration of 0 stops ticks until sleep is cleared, and clearing it
+// wakes whoever is blocked in Wait. Enabling a ticker that already has a sleep
+// channel must not replace it, and waking a ticker that never created one must
+// not close a nil channel.
 func (st *SleepyTicker) SetSleep(enabled bool) {
 	st.sleepMode = enabled
 	if enabled {
 		if st.sleepDuration > 0 {
 			st.ticker.Reset(st.sleepDuration)
-		} else {
-			// Next call to Wait will wait until SetSleep is called with enabled == false
+		} else if st.sleepChannel == nil {
+			// Next call to Wait blocks until SetSleep is called with enabled == false.
 			st.sleepChannel = make(chan time.Time)
 		}
-	} else {
-		st.ticker.Reset(st.normalDuration)
-		if st.sleepDuration > 0 {
-			// Notify that  we are not sleeping anymore.
-			close(st.sleepChannel)
-		}
+		return
+	}
+
+	st.ticker.Reset(st.normalDuration)
+	if st.sleepDuration == 0 && st.sleepChannel != nil {
+		close(st.sleepChannel)
+		st.sleepChannel = nil
 	}
 }

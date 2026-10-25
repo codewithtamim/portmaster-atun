@@ -66,6 +66,11 @@ func (p *tracedPacket) RerouteToTunnel() error {
 	return p.Packet.RerouteToTunnel()
 }
 
+func (p *tracedPacket) RerouteToWireGuard() error {
+	defer p.markServed("reroute-wireguard")
+	return p.Packet.RerouteToWireGuard()
+}
+
 func (p *tracedPacket) RerouteToSplitTun() error {
 	defer p.markServed("reroute-splittun")
 	return p.Packet.RerouteToSplitTun()

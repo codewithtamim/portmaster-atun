@@ -95,6 +95,11 @@ func start() error {
 		})
 	}()
 
+	// Android only; a no-op elsewhere.
+	if err := startPlatform(); err != nil {
+		return err
+	}
+
 	ver, err := getCacheDatabaseVersion()
 	if err == nil {
 		log.Debugf("intel/filterlists: cache database has version %s", ver.String())

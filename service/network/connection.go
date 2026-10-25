@@ -24,7 +24,6 @@ import (
 	_ "github.com/safing/portmaster/service/process/tags"
 	"github.com/safing/portmaster/service/resolver"
 	"github.com/safing/portmaster/spn/access"
-	"github.com/safing/portmaster/spn/access/account"
 	"github.com/safing/portmaster/spn/navigator"
 )
 
@@ -47,6 +46,9 @@ type ProcessContext struct {
 	CmdLine string
 	// PID is the process identifier.
 	PID int
+	// UID is the Android app that owns the process. Nil, and left out of
+	// the record, on other platforms.
+	UID *int `json:",omitempty"`
 	// CreatedAt the time when the process was created.
 	CreatedAt int64
 	// Profile is the ID of the main profile that
@@ -122,6 +124,10 @@ type Connection struct { //nolint:maligned // TODO: fix alignment
 	LocalPort uint16
 	// PID holds the PID of the owning process.
 	PID int
+	// UID is the Android app that owns the connection; apps there are
+	// identified by UID because no usable PID exists. Nil, and left out of
+	// the record, on other platforms.
+	UID *int `json:",omitempty"`
 	// Entity describes the remote entity that the connection has been
 	// established to. The entity might be changed or information might
 	// be added to it during the livetime of a connection. Access to
@@ -275,6 +281,7 @@ func getProcessContext(ctx context.Context, proc *process.Process) ProcessContex
 		BinaryPath:  proc.Path,
 		CmdLine:     proc.CmdLine,
 		PID:         proc.Pid,
+		UID:         processContextUID(proc),
 		CreatedAt:   proc.CreatedAt,
 	}
 
@@ -318,15 +325,16 @@ func NewConnectionFromDNSRequest(ctx context.Context, fqdn string, cnames []stri
 	switch {
 	case !ok:
 		// No dns request connection found.
-	case dnsRequestConn.PID < 0:
+	case dnsRequestOwnerUnidentified(dnsRequestConn):
 		// Process is not identified or is special.
 	case dnsRequestConn.Ended > 0 && dnsRequestConn.Ended < time.Now().Unix()-3:
 		// Connection has already ended (too long ago).
 		log.Tracer(ctx).Debugf("network: found ended dns request connection %s for dns request for %s", dnsRequestConn, fqdn)
 	default:
 		log.Tracer(ctx).Debugf("network: found matching dns request connection %s", dnsRequestConn.String())
-		// Inherit PID.
+		// Inherit PID and UID.
 		pi.PID = dnsRequestConn.PID
+		pi.UID = dnsRequestConn.UID
 		// Inherit process struct itself, as the PID may already be re-used.
 		proc = dnsRequestConn.process
 	}
@@ -339,9 +347,9 @@ func NewConnectionFromDNSRequest(ctx context.Context, fqdn string, cnames []stri
 		)
 	}
 
-	// Get process and profile with PID.
+	// Get process and profile with the platform's owner identity.
 	if proc == nil {
-		proc, _ = process.GetProcessWithProfile(ctx, pi.PID)
+		proc, _ = process.GetProcessWithProfileByOwner(ctx, pi)
 	}
 
 	timestamp := time.Now().Unix()
@@ -350,6 +358,7 @@ func NewConnectionFromDNSRequest(ctx context.Context, fqdn string, cnames []stri
 		Type:  DNSRequest,
 		Scope: fqdn,
 		PID:   proc.Pid,
+		UID:   pi.UID,
 		Entity: &intel.Entity{
 			Domain:  fqdn,
 			CNAME:   cnames,
@@ -519,6 +528,9 @@ func (conn *Connection) GatherConnectionInfo(pkt packet.Packet) (err error) {
 		// Get process by looking at the system state tables.
 		// Apply direction as reported from the state tables.
 		conn.PID, conn.Inbound, _ = process.GetPidOfConnection(pkt.Ctx(), pkt.Info())
+		// The Android lookup writes the owning app's UID into the packet info.
+		// It stays nil on desktop.
+		conn.UID = pkt.Info().UID
 		// Errors are informational and are logged to the context.
 	}
 
@@ -530,7 +542,13 @@ func (conn *Connection) GatherConnectionInfo(pkt packet.Packet) (err error) {
 
 	// Get Process and Profile.
 	if conn.process == nil {
-		conn.process, err = process.GetProcessWithProfile(pkt.Ctx(), conn.PID)
+		// Look up by the owner stored on the connection, not on the packet:
+		// nfqueue packets stay at UndefinedProcessID after the PID lookup.
+		// Use a copy so the shared packet info is not rewritten.
+		owner := *pkt.Info()
+		owner.PID = conn.PID
+		owner.UID = conn.UID
+		conn.process, err = process.GetProcessWithProfileByOwner(pkt.Ctx(), &owner)
 		// Errors are informational and are logged to the context.
 		if err != nil {
 			if pkt.InfoOnly() {
@@ -683,7 +701,7 @@ func (conn *Connection) UpdateFeatures() error {
 	case conn.Entity.IPScope.IsLocalhost():
 		// Do not record localhost-only connections, as they are very low interest in the history.
 		// TODO: Should we create a setting for this?
-	case user.MayUse(account.FeatureHistory):
+	case historyFeatureAllowed(user):
 		// Check if history may be used and is enabled.
 		lProfile := conn.Process().Profile()
 		if lProfile != nil {
@@ -692,7 +710,7 @@ func (conn *Connection) UpdateFeatures() error {
 	}
 
 	// Check if bandwidth visibility may be used.
-	conn.BandwidthEnabled = user.MayUse(account.FeatureBWVis)
+	conn.BandwidthEnabled = bandwidthEnabled(user)
 
 	return nil
 }
@@ -818,13 +836,16 @@ func (conn *Connection) SaveWhenFinished() {
 // Callers must make sure to lock the connection itself before calling
 // Save().
 func (conn *Connection) Save() {
+	if skipLocalNetworkSave(conn) {
+		return
+	}
 	conn.UpdateMeta()
 
 	// nolint:exhaustive
 	switch conn.Verdict {
 	case VerdictAccept, VerdictRerouteToNameserver, VerdictRerouteToSplitTun:
 		conn.ConnectionEstablished = true
-	case VerdictRerouteToTunnel:
+	case VerdictRerouteToTunnel, VerdictRerouteToWireGuard:
 		// this is already handled when the connection tunnel has been
 		// established.
 	default:

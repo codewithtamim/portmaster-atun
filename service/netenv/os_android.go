@@ -1,43 +1,46 @@
+//go:build android
+
 package netenv
 
-// TODO: Re-enable Android interfaces.
-// Deactived for transition to new module system.
+import (
+	"net"
+	"time"
 
-// import (
-// 	"net"
-// 	"time"
+	"github.com/safing/portmaster/base/utils/anet"
+)
 
-// 	"github.com/safing/portmaster-android/go/app_interface"
-// )
+var (
+	monitorNetworkChangeOnlineTicker  = time.NewTicker(time.Second)
+	monitorNetworkChangeOfflineTicker = time.NewTicker(time.Second)
+)
 
-// var (
-// 	monitorNetworkChangeOnlineTicker  = time.NewTicker(time.Second)
-// 	monitorNetworkChangeOfflineTicker = time.NewTicker(time.Second)
-// )
+type anetNotifier struct{}
 
-// func init() {
-// 	// Network change event is monitored by the android system.
-// 	monitorNetworkChangeOnlineTicker.Stop()
-// 	monitorNetworkChangeOfflineTicker.Stop()
-// }
+func (a *anetNotifier) OnNetworkChange() {
+	TriggerNetworkChangeCheck()
+}
 
-// func osGetInterfaceAddrs() ([]net.Addr, error) {
-// 	list, err := app_interface.GetNetworkAddresses()
-// 	if err != nil {
-// 		return nil, err
-// 	}
+func init() {
+	// On Android changes are pushed; tickers are stopped to save battery.
+	monitorNetworkChangeOnlineTicker.Stop()
+	monitorNetworkChangeOfflineTicker.Stop()
 
-// 	var netList []net.Addr
-// 	for _, addr := range list {
-// 		ipNetAddr, err := addr.ToIPNet()
-// 		if err == nil {
-// 			netList = append(netList, ipNetAddr)
-// 		}
-// 	}
+	anet.RegisterNotifier(&anetNotifier{})
+}
 
-// 	return netList, nil
-// }
+func osGetInterfaceAddrs() ([]net.Addr, error) {
+	return anet.InterfaceAddrs()
+}
 
-// func osGetNetworkInterfaces() ([]app_interface.NetworkInterface, error) {
-// 	return app_interface.GetNetworkInterfaces()
-// }
+func osGetNetworkInterfaces() ([]net.Interface, error) {
+	return anet.Interfaces()
+}
+
+func osGetAddrsForInterface(iface *net.Interface) ([]net.Addr, error) {
+	return anet.AddrsForInterface(iface.Name)
+}
+
+// No traceroute on Android. No raw sockets. Uses timezone.
+func osTracerouteSupported() bool {
+	return false
+}

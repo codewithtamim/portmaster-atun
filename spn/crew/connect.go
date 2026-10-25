@@ -51,6 +51,9 @@ type Tunnel struct {
 	route       *navigator.Route
 	failedTries int
 	stickied    bool
+	// requestedProfile is the hop profile selected for this connection,
+	// captured before route finding rewrites TunnelOpts.
+	requestedProfile string
 }
 
 func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
@@ -66,6 +69,7 @@ func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
 	if home == nil || homeTerminal == nil || homeTerminal.IsBeingAbandoned() {
 		reportConnectError(terminal.ErrUnknownError.With("home terminal is abandoned"))
 
+		releaseAbandonedTunnel(t)
 		t.connInfo.Lock()
 		defer t.connInfo.Unlock()
 		t.connInfo.Failed("SPN not ready for tunneling", "")
@@ -81,6 +85,7 @@ func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
 		log.Warningf("spn/crew: failed to establish route for %s: %s", t.connInfo, err)
 
 		// TODO: Clean this up.
+		releaseAbandonedTunnel(t)
 		t.connInfo.Lock()
 		defer t.connInfo.Unlock()
 		t.connInfo.Failed("SPN failed to establish route: "+err.Error(), "")
@@ -96,6 +101,7 @@ func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
 		tErr = tErr.Wrap("failed to initialize tunnel")
 		reportConnectError(tErr)
 
+		releaseAbandonedTunnel(t)
 		t.connInfo.Lock()
 		defer t.connInfo.Unlock()
 		t.connInfo.Failed("SPN failed to initialize data tunnel (connect op): "+tErr.Error(), "")
@@ -121,8 +127,19 @@ func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
 func (t *Tunnel) establish(ctx context.Context) (err error) {
 	var routes *navigator.Routes
 
+	// Capture the selected hop profile before FindRoutes rewrites it. A home
+	// hub without the destination IP family is upgraded to single-hop in place.
+	if t.connInfo.TunnelOpts != nil {
+		t.requestedProfile = t.connInfo.TunnelOpts.RoutingProfile
+	}
 	// Check if the destination sticks to a Hub.
 	sticksTo := getStickiedHub(t.connInfo)
+	// Android drops a remembered route built for a different hop profile.
+	// Desktop stickyRouteFits always accepts it.
+	if sticksTo != nil && !sticksTo.Avoid && !stickyRouteFits(sticksTo, t.requestedProfile) {
+		log.Tracer(ctx).Tracef("spn/crew: stickied route does not match %s", t.requestedProfile)
+		sticksTo = nil
+	}
 	switch {
 	case sticksTo == nil:
 		// Continue.
@@ -152,6 +169,7 @@ func (t *Tunnel) establish(ctx context.Context) (err error) {
 			t.dstTerminal = dstTerminal
 			t.route = sticksTo.Route
 			t.stickied = true
+			publishEstablishedRoute(t.route, t.dstPin)
 			return nil
 		}
 
@@ -200,6 +218,7 @@ func (t *Tunnel) establish(ctx context.Context) (err error) {
 		t.dstTerminal = dstTerminal
 		t.route = route
 		t.failedTries = tries
+		publishEstablishedRoute(t.route, t.dstPin)
 
 		// Push changes to Pins and return.
 		navigator.Main.PushPinChanges()

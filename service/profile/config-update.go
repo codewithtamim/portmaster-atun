@@ -35,6 +35,9 @@ func registerGlobalConfigProfileUpdater() error {
 const globalConfigProfileErrorID = "profile:global-profile-error"
 
 func updateGlobalConfigProfile(_ context.Context) error {
+	// Android only; a no-op on desktop. See config_update_android.go.
+	refreshLayeredProfilesForRoutingAlgorithm(cfgOptionRoutingAlgorithm())
+
 	cfgLock.Lock()
 	defer cfgLock.Unlock()
 

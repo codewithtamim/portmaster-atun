@@ -243,7 +243,8 @@ func authenticateRequest(w http.ResponseWriter, r *http.Request, targetHandler h
 
 func checkAuth(w http.ResponseWriter, r *http.Request, authRequired bool) (token *AuthToken, handled bool) {
 	// Return highest possible permissions in dev mode.
-	if devMode() {
+	// Not on Android, see devModeGrantsAccess.
+	if devMode() && devModeGrantsAccess() {
 		return &AuthToken{
 			Read:  PermitSelf,
 			Write: PermitSelf,
@@ -334,6 +335,10 @@ func checkAPIKey(r *http.Request) *AuthToken {
 
 	// Check if the provided API key exists.
 	token, ok := apiKeys[key]
+	if !ok {
+		// Android only; a no-op elsewhere. See SetProcessAPIKey.
+		token, ok = platformAPIKey(key)
+	}
 	if !ok {
 		log.Tracer(r.Context()).Tracef(
 			"api: provided api key %s... is unknown", key[:4],

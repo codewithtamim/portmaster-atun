@@ -108,8 +108,13 @@ func registerAPIEndpoints() error {
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Get username and password.
 	username, password, ok := r.BasicAuth()
-	// Request, if omitted.
+	// Android cannot use Basic: its Authorization header already carries the
+	// PortAPI token. Desktop gets "", "" here, so only Basic is accepted.
 	if !ok || username == "" || password == "" {
+		username, password = platformLoginCredentials(r)
+	}
+	// Request, if omitted.
+	if username == "" || password == "" {
 		w.Header().Set("WWW-Authenticate", "Basic realm=SPN Login")
 		http.Error(w, "Login with your SPN account.", http.StatusUnauthorized)
 		return

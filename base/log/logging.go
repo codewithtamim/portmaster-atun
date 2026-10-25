@@ -215,9 +215,13 @@ func Start(level string, logToStdout bool, logDir string) error {
 	}
 
 	// Setup writer.
-	if logToStdout {
+	switch {
+	case androidLog != nil:
+		// Android ignores stdout and files and writes to logcat.
+		GlobalWriter = NewAndroidWriter()
+	case logToStdout:
 		GlobalWriter = NewStdoutWriter()
-	} else {
+	default:
 		// Create file log writer.
 		var err error
 		GlobalWriter, err = NewFileWriter(logDir)
@@ -239,7 +243,7 @@ func Start(level string, logToStdout bool, logDir string) error {
 	close(startedSignal)
 
 	// Delete all logs older than one month.
-	if !logToStdout {
+	if !logToStdout && androidLog == nil {
 		err := CleanOldLogs(logDir, 30*24*time.Hour)
 		if err != nil {
 			Errorf("log: failed to clean old log files: %s", err)

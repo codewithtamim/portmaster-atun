@@ -172,7 +172,8 @@ func AddNetworkDebugData(di *debug.Info, profile, where string) {
 		case VerdictAccept,
 			VerdictRerouteToNameserver,
 			VerdictRerouteToSplitTun,
-			VerdictRerouteToTunnel:
+			VerdictRerouteToTunnel,
+			VerdictRerouteToWireGuard:
 
 			accepted++
 		}

@@ -306,11 +306,11 @@ func (tr *TCPResolver) dial(ctx context.Context) (*dns.Conn, error) {
 		// Dial with a copy of the client: the shared one may be in use by
 		// other goroutines and must not be changed.
 		dnsClient := *tr.dnsClient
-		dnsClient.Dialer = &net.Dialer{
+		dnsClient.Dialer = resolverDialer(&net.Dialer{
 			LocalAddr: localAddr,
 			Timeout:   tcpConnectionEstablishmentTimeout,
 			KeepAlive: defaultClientTTL,
-		}
+		})
 
 		// The pre-authenticated port, if there is one. The first packet
 		// consumes the pre-authentication: after a successful dial it is

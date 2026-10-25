@@ -121,7 +121,7 @@ func (pr *PlainResolver) ForceReconnect(_ context.Context) {}
 // port is pre-authenticated after the socket is bound and before the first
 // packet leaves, so the firewall attributes the query to Portmaster itself.
 func (pr *PlainResolver) exchange(ctx context.Context, dnsClient *dns.Client, dnsQuery *dns.Msg) (*dns.Msg, time.Duration, error) {
-	dialer := &net.Dialer{Timeout: dnsClient.Timeout}
+	dialer := resolverDialer(&net.Dialer{Timeout: dnsClient.Timeout})
 	rawConn, err := dialer.DialContext(ctx, networkUDP, pr.resolver.ServerAddress)
 	if err != nil {
 		return nil, 0, err

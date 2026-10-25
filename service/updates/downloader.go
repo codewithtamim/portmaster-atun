@@ -144,11 +144,13 @@ artifacts:
 		if existingFile, ok := d.existingFiles[artifact.SHA256]; ok {
 			// Check if this is the same file.
 			if existingFile == dstFilePath {
+				d.countExistingFile(dstFilePath)
 				continue artifacts
 			}
 			// Copy and check.
 			err = copyAndCheckSHA256Sum(existingFile, dstFilePath, artifact.SHA256, artifact.GetFileMode())
 			if err == nil {
+				d.countExistingFile(dstFilePath)
 				continue artifacts
 			}
 			log.Debugf("updates/%s: failed to copy existing file %s: %s", d.u.cfg.Name, artifact.Filename, err)
@@ -243,7 +245,7 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 	}
 
 	// Read the full body and return it.
-	content, err := io.ReadAll(resp.Body)
+	content, err := d.readBody(resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read body of response: %w", err)
 	}

@@ -1,4 +1,4 @@
-//go:build !server
+//go:build linux && !android && !server
 
 package netenv
 

@@ -18,11 +18,14 @@ type Unit struct {
 
 // NewUnit returns a new unit within the scheduler.
 func (s *Scheduler) NewUnit() *Unit {
-	return &Unit{
+	u := &Unit{
 		id:        s.currentUnitID.Add(1),
 		scheduler: s,
 		created:   time.Now(),
 	}
+	noteUnit(s)
+
+	return u
 }
 
 // ReUse re-initialized the unit to be able to reuse already allocated structs.
@@ -33,6 +36,7 @@ func (u *Unit) ReUse() {
 	// Get new ID and unset finish flag.
 	u.id = u.scheduler.currentUnitID.Add(1)
 	u.finished.UnSet()
+	noteUnit(u.scheduler)
 }
 
 // WaitForSlot blocks until the unit may be processed.

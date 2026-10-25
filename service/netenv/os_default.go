@@ -19,3 +19,11 @@ func osGetInterfaceAddrs() ([]net.Addr, error) {
 func osGetNetworkInterfaces() ([]net.Interface, error) {
 	return net.Interfaces()
 }
+
+func osGetAddrsForInterface(iface *net.Interface) ([]net.Addr, error) {
+	return iface.Addrs()
+}
+
+func osTracerouteSupported() bool {
+	return true
+}

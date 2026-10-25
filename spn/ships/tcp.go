@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/base/utils/aprotect"
 	"github.com/safing/portmaster/service/mgr"
 	"github.com/safing/portmaster/spn/conf"
 	"github.com/safing/portmaster/spn/hub"
@@ -39,12 +40,12 @@ func launchTCPShip(ctx context.Context, transport *hub.Transport, ip net.IP) (Sh
 	} else {
 		dialNet = "tcp6"
 	}
-	dialer := &net.Dialer{
+	dialer := aprotect.ApplyToDialer(&net.Dialer{
 		Timeout:       30 * time.Second,
 		LocalAddr:     conf.GetBindAddr(dialNet),
 		FallbackDelay: -1, // Disables Fast Fallback from IPv6 to IPv4.
 		KeepAlive:     -1, // Disable keep-alive.
-	}
+	})
 	conn, err := dialer.DialContext(ctx, dialNet, net.JoinHostPort(ip.String(), portToA(transport.Port)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)

@@ -24,6 +24,7 @@ func init() {
 	if runtime.GOOS == "windows" {
 		defaultNameserverAddress = "0.0.0.0:53"
 	}
+	applyPlatformNameserverDefault()
 
 	flag.StringVar(
 		&nameserverAddress,

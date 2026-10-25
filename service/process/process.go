@@ -115,17 +115,7 @@ func (p *Process) IsIdentified() bool {
 		return false
 	}
 
-	// Check for special PIDs.
-	switch p.Pid {
-	case UndefinedProcessID:
-		return false
-	case UnidentifiedProcessID:
-		return false
-	case UnsolicitedProcessID:
-		return false
-	default:
-		return true
-	}
+	return p.hasIdentifiedOwner()
 }
 
 // HasValidPID returns whether the process has valid PID of an actual process.
@@ -138,9 +128,9 @@ func (p *Process) HasValidPID() bool {
 	return p.Pid >= 0
 }
 
-// Equal returns if the two processes are both identified and have the same PID.
+// Equal returns if the two processes are both identified and have the same owner identity.
 func (p *Process) Equal(other *Process) bool {
-	return p.IsIdentified() && other.IsIdentified() && p.Pid == other.Pid
+	return p.IsIdentified() && other.IsIdentified() && p.ownerID() == other.ownerID()
 }
 
 const systemResolverScopedID = string(profile.SourceLocal) + "/" + profile.SystemResolverProfileID
@@ -179,7 +169,7 @@ func (p *Process) String() string {
 		return "?"
 	}
 
-	return fmt.Sprintf("%s:%s:%d", p.UserName, p.Path, p.Pid)
+	return fmt.Sprintf("%s:%s:%d", p.UserName, p.Path, p.ownerID())
 }
 
 // GetOrFindProcess returns the process for the given PID.

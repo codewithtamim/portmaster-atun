@@ -84,17 +84,7 @@ func cleanConnections() (activePIDs map[int]struct{}) {
 				var connActive bool
 				switch conn.IPProtocol { //nolint:exhaustive
 				case packet.TCP, packet.UDP:
-					connActive = state.Exists(&packet.Info{
-						Inbound:  false, // src == local
-						Version:  conn.IPVersion,
-						Protocol: conn.IPProtocol,
-						Src:      conn.LocalIP,
-						SrcPort:  conn.LocalPort,
-						Dst:      conn.Entity.IP,
-						DstPort:  conn.Entity.Port,
-						PID:      process.UndefinedProcessID,
-						SeenAt:   time.Unix(conn.Started, 0), // State tables will be updated if older than this.
-					}, now)
+					connActive = connectionStillActive(conn, now)
 					// Update last seen value for permanent verdict connections.
 					if connActive && conn.VerdictPermanent {
 						conn.lastSeen.Store(nowUnix)

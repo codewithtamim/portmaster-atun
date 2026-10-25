@@ -1,3 +1,5 @@
+//go:build !android
+
 // Package proxy provides minimal, Layer-4 TCP and UDP proxies
 // with injected routing decisions (DeciderFunc), structured logging, session
 // tracking, and graceful shutdown.

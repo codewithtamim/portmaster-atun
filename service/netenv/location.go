@@ -311,7 +311,7 @@ func GetInternetLocation() (deviceLocations *DeviceLocations, ok bool) {
 	v4ok, v6ok := getLocationFromInterfaces(dls)
 
 	// Try other methods for missing locations.
-	if !v4ok {
+	if !v4ok && osTracerouteSupported() {
 		_, err := getLocationFromTraceroute(dls)
 		if err != nil {
 			log.Warningf("netenv: failed to get IPv4 device location from traceroute: %s", err)

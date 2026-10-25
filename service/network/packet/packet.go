@@ -238,6 +238,7 @@ type Packet interface {
 	PermanentDrop() error
 	RerouteToNameserver() error
 	RerouteToTunnel() error
+	RerouteToWireGuard() error
 	RerouteToSplitTun() error
 	FastTrackedByIntegration() bool
 	InfoOnly() bool

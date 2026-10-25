@@ -50,6 +50,15 @@ func setupSLog(level Severity) {
 				NoColor:    !( /* Color: */ GlobalWriter.IsStdout() && isatty.IsTerminal(GlobalWriter.file.Fd())),
 			})
 
+		case "android":
+			// Same writer as base/log, so worker lines reach logcat. file is nil here.
+			logHandler = tint.NewHandler(GlobalWriter, &tint.Options{
+				AddSource:  true,
+				Level:      slogLevel,
+				TimeFormat: timeFormat,
+				NoColor:    true,
+			})
+
 		default:
 			logHandler = tint.NewHandler(os.Stdout, &tint.Options{
 				AddSource:  true,

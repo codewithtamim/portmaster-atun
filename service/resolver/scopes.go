@@ -81,6 +81,8 @@ var (
 		".c.f.ip6.arpa.",
 
 		// RFC6761: Special use domains for documentation and testing.
+		// On Android, example.com, example.net, and example.org are resolved
+		// globally. See documentationNamesResolvedGlobally.
 		".example.",
 		".example.com.",
 		".example.net.",
@@ -199,9 +201,11 @@ func GetResolversInScope(ctx context.Context, q *Query) (selected []*Resolver, p
 		return selected, ServerSourceMDNS, true
 	}
 
-	// Special use domains
-	if domainInScope(q.dotPrefixedFQDN, specialUseDomains) ||
-		domainInScope(q.dotPrefixedFQDN, specialServiceDomains) {
+	// Special use domains. Android resolves the IANA documentation names
+	// example.com, example.net, and example.org with the configured resolvers.
+	if !documentationNamesResolvedGlobally(q.dotPrefixedFQDN) &&
+		(domainInScope(q.dotPrefixedFQDN, specialUseDomains) ||
+			domainInScope(q.dotPrefixedFQDN, specialServiceDomains)) {
 		selected = addResolvers(ctx, q, selected, localResolvers)
 		return selected, "special", true
 	}

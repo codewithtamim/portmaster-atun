@@ -154,7 +154,7 @@ func (hr *HTTPSResolver) refreshClient() {
 	}
 
 	// Create new client.
-	tr := &http.Transport{
+	tr := resolverTransport(&http.Transport{
 		TLSClientConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			ServerName: hr.resolver.Info.Domain,
@@ -163,7 +163,7 @@ func (hr *HTTPSResolver) refreshClient() {
 		IdleConnTimeout:     1 * time.Minute,
 		TLSHandshakeTimeout: defaultConnectTimeout,
 		ForceAttemptHTTP2:   true, // Required when a custom TLSClientConfig is set; enables ALPN h2 negotiation.
-	}
+	})
 	hr.client = &http.Client{
 		Transport: tr,
 		Timeout:   maxRequestTimeout,

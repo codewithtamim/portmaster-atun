@@ -48,6 +48,7 @@ var (
 	ErrAutoCheckDisabled = errors.New("automatic update checks are disabled")
 	ErrNoUpdateAvailable = errors.New("no update available")
 	ErrActionRequired    = errors.New("action required")
+	ErrUpdaterDisabled   = errors.New("updates are not available on this platform")
 )
 
 // UpdateCommandConfig defines the configuration for a shell command
@@ -103,6 +104,9 @@ type Config struct {
 	// Notify defines whether the user shall be informed about events via notifications.
 	// If enabled, disables automatic restart after upgrade.
 	Notify bool
+	// Disabled keeps the module registered but never checks, downloads, or applies.
+	// Android sets this on the binary updater. Desktop leaves it false.
+	Disabled bool
 
 	// list of shell commands needed to run after the upgrade (if any)
 	PostUpgradeCommands []UpdateCommandConfig
@@ -167,6 +171,9 @@ type Updater struct {
 	isUpdateRunning *abool.AtomicBool
 	started         *abool.AtomicBool
 	configureLock   sync.Mutex
+
+	// progressTracker holds the Android download progress. Empty elsewhere.
+	progressTracker
 
 	instance instance
 }
@@ -239,6 +246,9 @@ func (u *Updater) updateAndUpgrade(w *mgr.WorkerCtx, indexURLs []string, ignoreV
 		return fmt.Errorf("an updater task is already running, please try again later")
 	}
 	defer u.isUpdateRunning.UnSet()
+	// Progress reporting is Android only; both calls are no-ops elsewhere.
+	u.beginProgress()
+	defer func() { u.endProgress(err) }()
 
 	// Resource updates can repair themselves without a restart. Re-apply the
 	// signed current index when startup verification found local corruption.
@@ -458,6 +468,12 @@ func (u *Updater) getIndexURLsWithLock() []string {
 }
 
 func (u *Updater) updateCheckWorker(w *mgr.WorkerCtx) error {
+	if u.cfg.Disabled {
+		return nil
+	}
+	if u.holdsIntelForApproval() {
+		return u.stageIntelForApproval(w)
+	}
 	err := u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, false)
 	switch {
 	case err == nil:
@@ -474,6 +490,9 @@ func (u *Updater) updateCheckWorker(w *mgr.WorkerCtx) error {
 }
 
 func (u *Updater) upgradeWorker(w *mgr.WorkerCtx) error {
+	if u.cfg.Disabled {
+		return nil
+	}
 	err := u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
 	switch {
 	case err == nil:
@@ -492,6 +511,9 @@ func (u *Updater) upgradeWorker(w *mgr.WorkerCtx) error {
 // ForceUpdate executes a forced update and upgrade directly and synchronously
 // and is intended to be used only within a tool, not a service.
 func (u *Updater) ForceUpdate() error {
+	if u.cfg.Disabled {
+		return ErrUpdaterDisabled
+	}
 	return u.m.Do("update and upgrade", func(w *mgr.WorkerCtx) error {
 		return u.updateAndUpgrade(w, u.getIndexURLsWithLock(), true, true)
 	})
@@ -500,6 +522,9 @@ func (u *Updater) ForceUpdate() error {
 // Configure makes slight configuration changes to the updater.
 // It locks the index, which can take a while an update is running.
 func (u *Updater) Configure(autoCheck bool, indexURLs []string) {
+	if u.cfg.Disabled {
+		return
+	}
 	u.configureLock.Lock()
 	defer u.configureLock.Unlock()
 
@@ -526,11 +551,17 @@ func (u *Updater) Configure(autoCheck bool, indexURLs []string) {
 
 // TriggerUpdateCheck triggers an update check.
 func (u *Updater) TriggerUpdateCheck() {
+	if u.cfg.Disabled {
+		return
+	}
 	u.updateCheckWorkerMgr.Go()
 }
 
 // TriggerApplyUpdates triggers upgrade.
 func (u *Updater) TriggerApplyUpdates() {
+	if u.cfg.Disabled {
+		return
+	}
 	u.upgradeWorkerMgr.Go()
 }
 
@@ -546,6 +577,11 @@ func (u *Updater) Manager() *mgr.Manager {
 
 // Start starts the module.
 func (u *Updater) Start() error {
+	if u.cfg.Disabled {
+		u.started.SetTo(true)
+		return nil
+	}
+
 	u.configureLock.Lock()
 	defer u.configureLock.Unlock()
 
@@ -567,7 +603,9 @@ func (u *Updater) Start() error {
 	}
 
 	u.started.SetTo(true)
-	return nil
+
+	// Android only; a no-op elsewhere.
+	return u.registerIntelAPI()
 }
 
 func (u *Updater) GetMainDir() string {

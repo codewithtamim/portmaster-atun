@@ -74,6 +74,11 @@ func (pkt *InfoPacket) RerouteToTunnel() error {
 	return ErrInfoOnlyPacket
 }
 
+// RerouteToWireGuard does nothing on an info-only packet.
+func (pkt *InfoPacket) RerouteToWireGuard() error {
+	return ErrInfoOnlyPacket
+}
+
 func (pkt *InfoPacket) RerouteToSplitTun() error {
 	return ErrInfoOnlyPacket
 }

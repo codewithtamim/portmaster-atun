@@ -53,6 +53,28 @@ var (
 		// `dns://94.140.15.15&name=AdGuard&blockedif=zeroip`,
 	}
 
+	// DNS preset nameserver lists. Shared by the desktop quick settings and the
+	// Android settings API so a server change only needs one edit.
+	dnsPresetCloudflare = []string{
+		"dot://cloudflare-dns.com?ip=1.1.1.2&name=Cloudflare&blockedif=zeroip",
+		"dot://cloudflare-dns.com?ip=1.0.0.2&name=Cloudflare&blockedif=zeroip",
+	}
+	dnsPresetQuad9 = []string{
+		"dot://dns.quad9.net?ip=9.9.9.9&name=Quad9&blockedif=empty",
+		"dot://dns.quad9.net?ip=149.112.112.112&name=Quad9&blockedif=empty",
+	}
+	dnsPresetAdGuard = []string{
+		"dot://dns.adguard.com?ip=94.140.14.14&name=AdGuard&blockedif=zeroip",
+		"dot://dns.adguard.com?ip=94.140.15.15&name=AdGuard&blockedif=zeroip",
+	}
+	dnsPresetAppliedPrivacy = []string{
+		"dot://dot1.applied-privacy.net?ip=146.255.56.98&name=AppliedPrivacy",
+	}
+	dnsPresetCloudflareFallback = []string{
+		"dot://cloudflare-dns.com?ip=1.1.1.1&name=Cloudflare&blockedif=zeroip",
+		"dot://cloudflare-dns.com?ip=1.0.0.1&name=Cloudflare&blockedif=zeroip",
+	}
+
 	CfgOptionNameServersKey   = "dns/nameservers"
 	configuredNameServers     config.StringArrayOption
 	cfgOptionNameServersOrder = 0
@@ -82,6 +104,10 @@ var (
 	nameserverRetryRate               config.IntOption
 	cfgOptionNameserverRetryRateOrder = 32
 )
+
+// useSpnLookups is set on Android. Nil elsewhere, so resolver sockets stay on
+// the desktop path.
+var useSpnLookups config.BoolOption
 
 func prepConfig() error {
 	err := config.Register(&config.Option{
@@ -131,41 +157,27 @@ When referring to the DNS server using a domain name, as with DoH, it is highly 
 				{
 					Name:   "Set Cloudflare (with Malware Filter)",
 					Action: config.QuickReplace,
-					Value: []string{
-						"dot://cloudflare-dns.com?ip=1.1.1.2&name=Cloudflare&blockedif=zeroip",
-						"dot://cloudflare-dns.com?ip=1.0.0.2&name=Cloudflare&blockedif=zeroip",
-					},
+					Value:  dnsPresetCloudflare,
 				},
 				{
 					Name:   "Set Quad9",
 					Action: config.QuickReplace,
-					Value: []string{
-						"dot://dns.quad9.net?ip=9.9.9.9&name=Quad9&blockedif=empty",
-						"dot://dns.quad9.net?ip=149.112.112.112&name=Quad9&blockedif=empty",
-					},
+					Value:  dnsPresetQuad9,
 				},
 				{
 					Name:   "Set AdGuard",
 					Action: config.QuickReplace,
-					Value: []string{
-						"dot://dns.adguard.com?ip=94.140.14.14&name=AdGuard&blockedif=zeroip",
-						"dot://dns.adguard.com?ip=94.140.15.15&name=AdGuard&blockedif=zeroip",
-					},
+					Value:  dnsPresetAdGuard,
 				},
 				{
 					Name:   "Set Foundation for Applied Privacy",
 					Action: config.QuickReplace,
-					Value: []string{
-						"dot://dot1.applied-privacy.net?ip=146.255.56.98&name=AppliedPrivacy",
-					},
+					Value:  dnsPresetAppliedPrivacy,
 				},
 				{
 					Name:   "Add Cloudflare (as fallback)",
 					Action: config.QuickMergeBottom,
-					Value: []string{
-						"dot://cloudflare-dns.com?ip=1.1.1.1&name=Cloudflare&blockedif=zeroip",
-						"dot://cloudflare-dns.com?ip=1.0.0.1&name=Cloudflare&blockedif=zeroip",
-					},
+					Value:  dnsPresetCloudflareFallback,
 				},
 			},
 			"self:detail:internalSpecialUseDomains": internalSpecialUseDomains,
@@ -302,7 +314,7 @@ When referring to the DNS server using a domain name, as with DoH, it is highly 
 	}
 	dontResolveSpecialDomains = config.Concurrent.GetAsBool(CfgOptionDontResolveSpecialDomainsKey, false)
 
-	return nil
+	return registerAndroidDNSConfig()
 }
 
 func validateNameservers(value interface{}) error {

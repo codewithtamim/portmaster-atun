@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !android
 
 package nfq
 
@@ -203,6 +203,10 @@ func (pkt *packet) RerouteToNameserver() error {
 
 func (pkt *packet) RerouteToTunnel() error {
 	return pkt.mark(MarkRerouteSPN)
+}
+
+func (pkt *packet) RerouteToWireGuard() error {
+	return pkt.Drop()
 }
 
 func (pkt *packet) RerouteToSplitTun() error {

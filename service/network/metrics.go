@@ -145,7 +145,7 @@ func (conn *Connection) addToMetrics() {
 		blockedOutConnCounter.Inc()
 		conn.addedToMetrics = true
 		return
-	case VerdictAccept, VerdictRerouteToTunnel, VerdictRerouteToSplitTun:
+	case VerdictAccept, VerdictRerouteToTunnel, VerdictRerouteToSplitTun, VerdictRerouteToWireGuard:
 		// Continue to next section.
 	default:
 		// Connection is not counted.

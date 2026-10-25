@@ -16,6 +16,7 @@ const (
 	VerdictRerouteToTunnel     Verdict = 6
 	VerdictFailed              Verdict = 7
 	VerdictRerouteToSplitTun   Verdict = 8
+	VerdictRerouteToWireGuard  Verdict = 9
 )
 
 func (v Verdict) String() string {
@@ -36,6 +37,8 @@ func (v Verdict) String() string {
 		return "RerouteToTunnel"
 	case VerdictRerouteToSplitTun:
 		return "RerouteToSplitTun"
+	case VerdictRerouteToWireGuard:
+		return "RerouteToWireGuard"
 	case VerdictFailed:
 		return "Failed"
 	default:
@@ -62,6 +65,8 @@ func (v Verdict) Verb() string {
 		return "tunneled"
 	case VerdictRerouteToSplitTun:
 		return "split tunneled"
+	case VerdictRerouteToWireGuard:
+		return "tunneled via wireguard"
 	case VerdictFailed:
 		return "failed"
 	default:

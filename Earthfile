@@ -84,6 +84,10 @@ go-ci:
     BUILD +go-build --GOOS="linux"   --GOARCH="arm64"
     BUILD +go-build --GOOS="windows" --GOARCH="amd64"
     BUILD +go-build --GOOS="windows" --GOARCH="arm64"
+    # Android ships as a library, so it is compile-checked instead of built.
+    # This is also what catches a new linux-only file that forgot !android:
+    # GOOS=android satisfies the linux build constraint.
+    BUILD +go-compile-check --GOOS="android" --GOARCH="arm64"
     BUILD +go-test
 
 angular-ci:
@@ -202,6 +206,26 @@ go-build:
     END
 
     SAVE ARTIFACT --keep-ts "/tmp/build/" ./output
+
+# go-compile-check runs 'go build ./...' for a platform without saving artifacts.
+# Used as a CI gate for platforms that ship as a library rather than a binary.
+go-compile-check:
+    FROM +go-base
+
+    ARG GOOS=linux
+    ARG GOARCH=amd64
+    ARG GOARM
+
+    CACHE --sharing shared "$GOCACHE"
+    CACHE --sharing shared "$GOMODCACHE"
+
+    ENV CGO_ENABLED = "0"
+    RUN --no-cache go build ./...
+    RUN --no-cache go vet ./service/... ./spn/... ./base/... ./cmds/...
+    # Tests for this platform need a device to run, so -exec=true builds each
+    # test binary without executing it. That still catches test code rotting
+    # against the code it covers.
+    RUN --no-cache go test -run "^\$" -count=1 -exec=true ./...
 
 spn-image:
     # Use minimal image as base.

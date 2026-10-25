@@ -592,6 +592,11 @@ Pro Tip: You can use "#" to add a comment to a rule.
 	cfgOptionBlockInbound = config.Concurrent.GetAsBool(CfgOptionBlockInboundKey, false)
 	cfgBoolOptions[CfgOptionBlockInboundKey] = cfgOptionBlockInbound
 
+	err = registerAndroidDevicePolicyOptions()
+	if err != nil {
+		return err
+	}
+
 	// Filter Out-of-Scope DNS Records
 	err = config.Register(&config.Option{
 		Name:           "Enforce Global/Private Split-View",
@@ -674,7 +679,7 @@ Please note that DNS bypass attempts might be additionally blocked in the System
 		OptType:        config.OptTypeBool,
 		ExpertiseLevel: config.ExpertiseLevelUser,
 		ReleaseLevel:   config.ReleaseLevelStable,
-		DefaultValue:   true,
+		DefaultValue:   preventBypassingDefault(),
 		Annotations: config.Annotations{
 			config.SettablePerAppAnnotation: true,
 			config.DisplayHintAnnotation:    status.DisplayHintSecurityLevel,
@@ -686,7 +691,7 @@ Please note that DNS bypass attempts might be additionally blocked in the System
 	if err != nil {
 		return err
 	}
-	cfgOptionPreventBypassing = config.Concurrent.GetAsBool(CfgOptionPreventBypassingKey, true)
+	cfgOptionPreventBypassing = config.Concurrent.GetAsBool(CfgOptionPreventBypassingKey, preventBypassingDefault())
 	cfgBoolOptions[CfgOptionPreventBypassingKey] = cfgOptionPreventBypassing
 
 	// Use SPN
@@ -928,5 +933,5 @@ Important: SPN takes precedence over Split Tunnel. To use Split Tunnel with SPN,
 	cfgOptionSplitTunUsagePolicy = config.Concurrent.GetAsStringArray(CfgOptionSplitTunUsagePolicyKey, []string{})
 	cfgStringArrayOptions[CfgOptionSplitTunUsagePolicyKey] = cfgOptionSplitTunUsagePolicy
 
-	return nil
+	return applyAndroidHistoryDefault()
 }

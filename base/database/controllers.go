@@ -32,6 +32,11 @@ func getController(name string) (*Controller, error) {
 	controllersLock.Lock()
 	defer controllersLock.Unlock()
 
+	// Another caller may have started it while this one waited for the lock.
+	if controller, ok := controllers[name]; ok {
+		return controller, nil
+	}
+
 	if shuttingDown.IsSet() {
 		return nil, ErrShuttingDown
 	}

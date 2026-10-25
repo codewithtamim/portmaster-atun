@@ -112,7 +112,7 @@ func processListFile(ctx context.Context, filter *scopedBloom, file *updates.Art
 	startSafe(func() (err error) {
 		defer close(values)
 
-		err = decodeFile(ctx, f, values)
+		err = decodeFile(ctx, countCacheBytes(f), values)
 		return
 	})
 

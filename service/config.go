@@ -201,6 +201,41 @@ func MakeUpdateConfigs(svcCfg *ServiceConfig) (binaryUpdateConfig, intelUpdateCo
 			NeedsRestart:      false,
 			Notify:            false,
 		}
+
+	case "android":
+		binaryUpdateConfig = &updates.Config{
+			Name:              configure.DefaultBinaryIndexName,
+			Directory:         svcCfg.BinDir,
+			DownloadDirectory: filepath.Join(svcCfg.DataDir, "download_binaries"),
+			PurgeDirectory:    filepath.Join(svcCfg.DataDir, "upgrade_obsolete_binaries"),
+			Ignore:            []string{},
+			IndexURLs:         svcCfg.BinariesIndexURLs,
+			IndexFile:         "index.json",
+			Verify:            svcCfg.VerifyBinaryUpdates,
+			AutoCheck:         false,
+			AutoDownload:      false,
+			AutoApply:         false,
+			NeedsRestart:      false,
+			Notify:            false,
+			// The core ships inside the APK, so this updater never downloads
+			// or applies. It still exists because callers of BinaryUpdates
+			// assume a non-nil updater.
+			Disabled: true,
+		}
+		intelUpdateConfig = &updates.Config{
+			Name:              configure.DefaultIntelIndexName,
+			Directory:         filepath.Join(svcCfg.DataDir, "intel"),
+			DownloadDirectory: filepath.Join(svcCfg.DataDir, "download_intel"),
+			PurgeDirectory:    filepath.Join(svcCfg.DataDir, "upgrade_obsolete_intel"),
+			IndexURLs:         svcCfg.IntelIndexURLs,
+			IndexFile:         "index.json",
+			Verify:            svcCfg.VerifyIntelUpdates,
+			AutoCheck:         true,
+			AutoDownload:      true,
+			AutoApply:         true,
+			NeedsRestart:      false,
+			Notify:            false,
+		}
 	}
 
 	return

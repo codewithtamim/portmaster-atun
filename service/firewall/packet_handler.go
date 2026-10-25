@@ -280,6 +280,12 @@ func fastTrackedPermit(conn *network.Connection, pkt packet.Packet) (verdict net
 
 		// Handle echo request and replies regularly.
 		// Other ICMP packets are considered system business.
+		// Android reports flows, not packets, so there are no layers to
+		// classify. Continue to the normal decision instead of guessing.
+		if !packetHasLayers(pkt) {
+			log.Tracer(pkt.Ctx()).Debugf("filter: no parsed layers, continuing to decision: %s", pkt)
+			return network.VerdictUndecided, false
+		}
 		icmpLayers := pkt.Layers().LayerClass(layers.LayerClassIPControl)
 		switch icmpLayer := icmpLayers.(type) {
 		case *layers.ICMPv4:
@@ -682,6 +688,18 @@ func inspectDNSPacket(conn *network.Connection, pkt packet.Packet) {
 		return
 	}
 
+	// Some backends report flows rather than packets and have no payload to
+	// give. Inspection is a best-effort bypass check, so accept instead of
+	// blocking what we cannot read. Desktop packets still fail Unpack below.
+	if acceptEmptyDNSPayload(pkt) {
+		log.Tracer(pkt.Ctx()).Tracef("filter: skipping dns inspection of %s, no payload available", pkt)
+		err := pkt.Accept()
+		if err != nil {
+			log.Errorf("filter: failed to accept dns packet: %s", err)
+		}
+		return
+	}
+
 	// Parse and block invalid packets.
 	err = dnsPacket.Unpack(pkt.Payload())
 	if err != nil {
@@ -778,27 +796,30 @@ func icmpFilterHandler(conn *network.Connection, pkt packet.Packet) {
 
 	// Handle echo request and replies regularly.
 	// Other ICMP packets are considered system business.
-	icmpLayers := pkt.Layers().LayerClass(layers.LayerClassIPControl)
-	switch icmpLayer := icmpLayers.(type) {
-	case *layers.ICMPv4:
-		switch icmpLayer.TypeCode.Type() {
-		case layers.ICMPv4TypeEchoRequest,
-			layers.ICMPv4TypeEchoReply:
-			// Continue
-		default:
-			issueVerdict(conn, pkt, network.VerdictAccept, false)
-			return
-		}
+	// Android reports flows, not packets, so there is no ICMP type to check;
+	// the decision below is then made on the connection alone.
+	if packetHasLayers(pkt) {
+		switch icmpLayer := pkt.Layers().LayerClass(layers.LayerClassIPControl).(type) {
+		case *layers.ICMPv4:
+			switch icmpLayer.TypeCode.Type() {
+			case layers.ICMPv4TypeEchoRequest,
+				layers.ICMPv4TypeEchoReply:
+				// Continue
+			default:
+				issueVerdict(conn, pkt, network.VerdictAccept, false)
+				return
+			}
 
-	case *layers.ICMPv6:
-		switch icmpLayer.TypeCode.Type() {
-		case layers.ICMPv6TypeEchoRequest,
-			layers.ICMPv6TypeEchoReply:
-			// Continue
+		case *layers.ICMPv6:
+			switch icmpLayer.TypeCode.Type() {
+			case layers.ICMPv6TypeEchoRequest,
+				layers.ICMPv6TypeEchoReply:
+				// Continue
 
-		default:
-			issueVerdict(conn, pkt, network.VerdictAccept, false)
-			return
+			default:
+				issueVerdict(conn, pkt, network.VerdictAccept, false)
+				return
+			}
 		}
 	}
 
@@ -885,6 +906,8 @@ func issueVerdict(conn *network.Connection, pkt packet.Packet, verdict network.V
 		err = pkt.RerouteToNameserver()
 	case network.VerdictRerouteToTunnel:
 		err = pkt.RerouteToTunnel()
+	case network.VerdictRerouteToWireGuard:
+		err = pkt.RerouteToWireGuard()
 	case network.VerdictRerouteToSplitTun:
 		err = pkt.RerouteToSplitTun()
 	case network.VerdictFailed:

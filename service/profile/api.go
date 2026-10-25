@@ -44,7 +44,7 @@ func registerAPIEndpoints() error {
 		return err
 	}
 
-	return nil
+	return registerProfileAPIEndpoints()
 }
 
 type mergeProfilesRequest struct {

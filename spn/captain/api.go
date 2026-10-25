@@ -25,7 +25,7 @@ func registerAPIEndpoints() error {
 		return err
 	}
 
-	return nil
+	return registerRoutingAPIEndpoint()
 }
 
 func handleReInit(ar *api.Request) (msg string, err error) {

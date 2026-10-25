@@ -14,16 +14,14 @@ import (
 	"github.com/safing/portmaster/service/profile/endpoints"
 	"github.com/safing/portmaster/service/resolver"
 	"github.com/safing/portmaster/spn/captain"
-	"github.com/safing/portmaster/spn/crew"
 	"github.com/safing/portmaster/spn/navigator"
-	"github.com/safing/portmaster/spn/sluice"
 )
 
 func checkTunneling(ctx context.Context, conn *network.Connection) {
 	// Check if the connection should be tunneled at all.
 	switch {
-	case !tunnelEnabled():
-		// Tunneling is disabled.
+	case !routeActive():
+		// No routing target wants this connection.
 		return
 	case !conn.Entity.IPScope.IsGlobal():
 		// Can't tunnel Local/LAN connections.
@@ -39,12 +37,15 @@ func checkTunneling(ctx context.Context, conn *network.Connection) {
 		return
 	case conn.Process().Pid == ownPID:
 		// Bypass tunneling for certain own connections.
-		switch {
-		case !captain.ClientReady():
-			return
-		case captain.IsExcepted(conn.Entity.IP):
+		if bypassOwnConnection(conn.Entity.IP) {
 			return
 		}
+	}
+
+	// A non-SPN routing target decides here, before SPN hop policy. Platforms
+	// where the SPN is the only target always report false; see routing_stub.go.
+	if checkAlternateRouting(ctx, conn) {
+		return
 	}
 
 	// Check more extensively for Local/LAN connections.
@@ -130,7 +131,7 @@ func requestTunneling(ctx context.Context, conn *network.Connection) error {
 	conn.TunnelOpts = DeriveTunnelOptions(layeredProfile, conn.Process(), conn.Entity, conn.Encrypted)
 
 	// Queue request in sluice.
-	err := sluice.AwaitRequest(conn, crew.HandleSluiceRequest)
+	err := awaitTunnelRequest(conn)
 	if err != nil {
 		return err
 	}

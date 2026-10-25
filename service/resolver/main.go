@@ -99,11 +99,14 @@ func start() error {
 			return false, nil
 		})
 
+	reconnectOnRouteChange()
+
 	// reload after config change
 	prevNameservers := strings.Join(configuredNameServers(), " ")
+	captureUseSPN()
 	module.instance.Config().EventConfigChange.AddCallback(
 		"update nameservers",
-		func(_ *mgr.WorkerCtx, _ struct{}) (bool, error) {
+		func(wc *mgr.WorkerCtx, _ struct{}) (bool, error) {
 			newNameservers := strings.Join(configuredNameServers(), " ")
 			if newNameservers != prevNameservers {
 				prevNameservers = newNameservers
@@ -111,6 +114,7 @@ func start() error {
 				loadResolvers()
 				log.Debug("resolver: reloaded nameservers due to config change")
 			}
+			onUseSPNConfigChange(wc.Ctx())
 			return false, nil
 		})
 
@@ -326,5 +330,6 @@ type instance interface {
 	NetEnv() *netenv.NetEnv
 	Config() *config.Config
 	GetEventSPNConnected() *mgr.EventMgr[struct{}]
+	SPNReady() bool
 	ShuttingDown() <-chan struct{}
 }

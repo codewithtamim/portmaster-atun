@@ -74,7 +74,7 @@ serviceLoop:
 			// log.Tracef("adding: %s", iface.Name)
 			_, _ = io.WriteString(hasher, iface.Flags.String())
 			// log.Tracef("adding: %s", iface.Flags.String())
-			addrs, err := iface.Addrs()
+			addrs, err := osGetAddrsForInterface(&iface)
 			if err != nil {
 				log.Warningf("netenv: failed to get addrs from interface %s: %s", iface.Name, err)
 				continue

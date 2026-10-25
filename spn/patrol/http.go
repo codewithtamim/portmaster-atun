@@ -10,6 +10,7 @@ import (
 	"github.com/tevino/abool"
 
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/base/utils/aprotect"
 	"github.com/safing/portmaster/service/mgr"
 	"github.com/safing/portmaster/spn/conf"
 )
@@ -146,12 +147,12 @@ func CheckHTTPSConnection(ctx context.Context, network, domain string) (statusCo
 	if err != nil {
 		return 0, err
 	}
-	dialer := &net.Dialer{
+	dialer := aprotect.ApplyToDialer(&net.Dialer{
 		Timeout:       15 * time.Second,
 		LocalAddr:     conf.GetBindAddr(network),
 		FallbackDelay: -1, // Disables Fast Fallback from IPv6 to IPv4.
 		KeepAlive:     -1, // Disable keep-alive.
-	}
+	})
 	dialWithNet := func(ctx context.Context, _, addr string) (net.Conn, error) {
 		// Ignore network by http client.
 		// Instead, force either tcp4 or tcp6.

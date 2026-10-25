@@ -59,7 +59,7 @@ func startServer() {
 	}
 
 	// Configure server.
-	server.Addr = listenAddressConfig()
+	server.Addr = platformListenAddress(listenAddressConfig())
 	server.Handler = &mainHandler{
 		// TODO: mainMux should not be modified anymore.
 		mux: mainMux,

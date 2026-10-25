@@ -11,9 +11,15 @@ import (
 // GlobalWriter is the global log writer.
 var GlobalWriter *LogWriter = nil
 
+// androidLog writes a line to the Android logcat. It is set by
+// writer_android.go in Android cgo builds and is nil everywhere else.
+var androidLog func(level Severity, text string)
+
 type LogWriter struct {
 	writeLock sync.Mutex
 	isStdout  bool
+	// isAndroid writes through androidLog. file stays nil, so callers must not use Fd.
+	isAndroid bool
 	file      *os.File
 }
 
@@ -22,6 +28,13 @@ func NewStdoutWriter() *LogWriter {
 	return &LogWriter{
 		file:     os.Stdout,
 		isStdout: true,
+	}
+}
+
+// NewAndroidWriter creates a new log writer that will write to the Android logcat.
+func NewAndroidWriter() *LogWriter {
+	return &LogWriter{
+		isAndroid: true,
 	}
 }
 
@@ -49,6 +62,11 @@ func (l *LogWriter) Write(buf []byte) (int, error) {
 		return 0, fmt.Errorf("log writer not initialized")
 	}
 
+	if l.isAndroid {
+		androidLog(InfoLevel, string(buf))
+		return len(buf), nil
+	}
+
 	// No need to lock in stdout context.
 	if !l.isStdout {
 		l.writeLock.Lock()
@@ -61,6 +79,12 @@ func (l *LogWriter) Write(buf []byte) (int, error) {
 // WriteMessage writes the message to the writer.
 func (l *LogWriter) WriteMessage(msg Message, duplicates uint64) {
 	if l == nil {
+		return
+	}
+
+	if l.isAndroid {
+		line := msg.(*logLine) //nolint:forcetypeassert // Can only be *logLine.
+		androidLog(line.level, formatLine(line, duplicates, false))
 		return
 	}
 
@@ -80,7 +104,7 @@ func (l *LogWriter) IsStdout() bool {
 
 // Close closes the writer.
 func (l *LogWriter) Close() {
-	if l != nil && !l.isStdout {
+	if l != nil && !l.isStdout && !l.isAndroid && l.file != nil {
 		_ = l.file.Close()
 	}
 }

@@ -162,6 +162,11 @@ func registerAPIEndpoints() error {
 		return err
 	}
 
+	err := registerAndroidDebugEndpoints()
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

@@ -40,6 +40,9 @@ type LayeredProfile struct {
 	BlockScopeInternet  config.BoolOption   `json:"-"`
 	BlockP2P            config.BoolOption   `json:"-"`
 	BlockInbound        config.BoolOption   `json:"-"`
+	BlockOnMobile       config.BoolOption   `json:"-"`
+	BlockOnLock         config.BoolOption   `json:"-"`
+	BlockOnWifi         config.BoolOption   `json:"-"`
 	RemoveOutOfScopeDNS config.BoolOption   `json:"-"`
 	RemoveBlockedDNS    config.BoolOption   `json:"-"`
 	FilterSubDomains    config.BoolOption   `json:"-"`
@@ -91,6 +94,7 @@ func NewLayeredProfile(localProfile *Profile) *LayeredProfile {
 		CfgOptionBlockInboundKey,
 		cfgOptionBlockInbound,
 	)
+	applyAndroidDevicePolicyOptions(lp)
 	lp.RemoveOutOfScopeDNS = lp.wrapBoolOption(
 		CfgOptionRemoveOutOfScopeDNSKey,
 		cfgOptionRemoveOutOfScopeDNS,

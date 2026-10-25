@@ -1,3 +1,5 @@
+//go:build !android
+
 package ivpn
 
 import (
@@ -75,18 +77,15 @@ type markerRecord struct {
 
 var db = database.NewInterface(&database.Options{Local: true, Internal: true})
 
-// Database key used to persist the user's choice to suppress the IVPN detected notification.
-const Notification_DB_ID_IvpnDetectSuppressed = "core:notifications/interop/ivpn/suppressed"
-
 // isNotificationSuppressed returns true if the user has chosen to never see the IVPN compat notification.
 func isNotificationSuppressed() bool {
-	_, err := db.Get(Notification_DB_ID_IvpnDetectSuppressed)
+	_, err := db.Get(NotificationDBIDIvpnDetectSuppressed)
 	return err == nil
 }
 
 // suppressNotification persists the user's decision to never show the notification again.
 func suppressNotification() error {
 	m := &markerRecord{}
-	m.SetKey(Notification_DB_ID_IvpnDetectSuppressed)
+	m.SetKey(NotificationDBIDIvpnDetectSuppressed)
 	return db.Put(m)
 }

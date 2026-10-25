@@ -40,7 +40,7 @@ func (ep *EndpointDomain) check(entity *intel.Entity, domain string) (EPResult, 
 
 	switch ep.MatchType {
 	case domainMatchTypeExact:
-		if domain == ep.Domain {
+		if domain == ep.Domain || deniedExactMatchesSubdomain(ep, domain) {
 			return result, reason
 		}
 	case domainMatchTypeZone:

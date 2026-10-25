@@ -32,6 +32,7 @@ var defaultDeciders = []deciderFn{
 	checkIfBroadcastReply,
 	checkConnectionType,
 	checkConnectionScope,
+	checkDevicePolicy,
 	checkEndpointLists,
 	checkInvalidIP,
 	checkResolverScope,
@@ -341,11 +342,14 @@ func checkConnectivityDomain(_ context.Context, conn *network.Connection, p *pro
 	}
 }
 
-func checkConnectionScope(_ context.Context, conn *network.Connection, p *profile.LayeredProfile, _ packet.Packet) bool {
+func checkConnectionScope(_ context.Context, conn *network.Connection, p *profile.LayeredProfile, pkt packet.Packet) bool {
 	// If we are handling a DNS request, check if we can immediately block it.
 	if conn.Type == network.DNSRequest {
 		// DNS is expected to resolve to LAN or Internet addresses.
 		// Localhost queries are immediately responded to by the nameserver.
+		if denyDNSForBlockedInternet(conn, p) {
+			return true
+		}
 		if p.BlockScopeInternet() && p.BlockScopeLAN() {
 			conn.Block("Internet and LAN access blocked", profile.CfgOptionBlockScopeInternetKey)
 			return true
@@ -358,6 +362,11 @@ func checkConnectionScope(_ context.Context, conn *network.Connection, p *profil
 	switch conn.Entity.IPScope {
 	case netutils.Global, netutils.GlobalMulticast:
 		if p.BlockScopeInternet() {
+			// Android cannot name an ICMP sender. Leave that echo for the
+			// endpoint rules and the default action. Other platforms no-op.
+			if skipUnattributedICMPScope(conn, pkt) {
+				return false
+			}
 			conn.Deny("Internet access blocked", profile.CfgOptionBlockScopeInternetKey) // Block Outbound / Drop Inbound
 			return true
 		}
@@ -416,6 +425,8 @@ func checkBypassPrevention(ctx context.Context, conn *network.Connection, p *pro
 		}
 	}
 
+	// Android only; a no-op elsewhere. See reportUnblockedSecureDNS.
+	reportUnblockedSecureDNS(conn)
 	return false
 }
 
@@ -430,7 +441,7 @@ func checkFilterLists(ctx context.Context, conn *network.Connection, p *profile.
 			for _, unbreakListID := range resolvedUnbreakFilterListIDs {
 				if blockedListID == unbreakListID {
 					log.Tracer(ctx).Debugf("filter: unbreak filter %s matched, ignoring other filter list matches", unbreakListID)
-					return false
+					return concludeUnbreakMatch(ctx, conn, reason, unbreakListID)
 				}
 			}
 		}

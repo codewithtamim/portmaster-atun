@@ -47,6 +47,11 @@ func registerAPIEndpoints() error {
 		return err
 	}
 
+	err := registerCaptivePortalAPI()
+	if err != nil {
+		return err
+	}
+
 	if err := api.RegisterEndpoint(api.Endpoint{
 		Path: "network/location/traceroute",
 		Read: api.PermitUser,

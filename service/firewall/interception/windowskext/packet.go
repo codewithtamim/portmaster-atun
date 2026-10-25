@@ -141,6 +141,11 @@ func (pkt *Packet) RerouteToTunnel() error {
 	return nil
 }
 
+// RerouteToWireGuard drops the packet. This platform has no WireGuard target.
+func (pkt *Packet) RerouteToWireGuard() error {
+	return pkt.Drop()
+}
+
 // RerouteToSplitTun permanently reroutes the connection to the split tunnel (and the current packet).
 func (pkt *Packet) RerouteToSplitTun() error {
 	if pkt.verdictSet.SetToIf(false, true) {

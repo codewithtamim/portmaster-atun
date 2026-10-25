@@ -28,6 +28,11 @@ func registerAPI() error {
 		return err
 	}
 
+	err := registerDNSSettingsAPI()
+	if err != nil {
+		return err
+	}
+
 	if err := api.RegisterEndpoint(api.Endpoint{
 		Path: `dns/cache/{query:[a-z0-9\.-]{0,512}\.[A-Z]{1,32}}`,
 		Read: api.PermitUser,

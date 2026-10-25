@@ -10,6 +10,7 @@ import (
 	"github.com/safing/portmaster/base/config"
 	"github.com/safing/portmaster/base/log"
 	"github.com/safing/portmaster/base/notifications"
+	"github.com/safing/portmaster/base/utils/anotif"
 	"github.com/safing/portmaster/service/mgr"
 	"github.com/safing/portmaster/service/process"
 	"github.com/safing/portmaster/service/profile"
@@ -175,10 +176,16 @@ func (issue *appIssue) notify(proc *process.Process) {
 		proc.Path,
 	)
 
-	// Check if we already have this notification.
+	// Android delivers through anotif. Desktop dedupes with the notifications module.
 	eventID := fmt.Sprintf(issue.id, p.ID)
-	n := notifications.Get(eventID)
-	if n != nil {
+	if anotif.Handles() && deliverSecureDNSImmediately(issue, proc, eventID) {
+		return
+	}
+	if anotif.Handles() {
+		if anotif.AlreadyDelivered(eventID) {
+			return
+		}
+	} else if notifications.Get(eventID) != nil {
 		return
 	}
 
@@ -189,25 +196,30 @@ func (issue *appIssue) notify(proc *process.Process) {
 
 	// Build message.
 	message := strings.ReplaceAll(issue.message, "[APPNAME]", p.Name)
+	title := fmt.Sprintf(issue.title, p.Name)
 
-	// Create a new notification.
-	n = &notifications.Notification{
-		EventID:          eventID,
-		Type:             issue.level,
-		Title:            fmt.Sprintf(issue.title, p.Name),
-		Message:          message,
-		ShowOnSystem:     true,
-		AvailableActions: issue.actions,
-	}
-	if len(n.AvailableActions) == 0 {
-		n.AvailableActions = []*notifications.Action{
-			{
-				ID:   "ack",
-				Text: "OK",
-			},
+	// Android shows the warning itself and never uses the notifications module.
+	if anotif.Handles() {
+		anotif.Deliver(eventID, title, message)
+	} else {
+		n := &notifications.Notification{
+			EventID:          eventID,
+			Type:             issue.level,
+			Title:            title,
+			Message:          message,
+			ShowOnSystem:     true,
+			AvailableActions: issue.actions,
 		}
+		if len(n.AvailableActions) == 0 {
+			n.AvailableActions = []*notifications.Action{
+				{
+					ID:   "ack",
+					Text: "OK",
+				},
+			}
+		}
+		notifications.Notify(n)
 	}
-	notifications.Notify(n)
 
 	// Set warning on profile.
 	module.mgr.Go("set app compat warning", func(ctx *mgr.WorkerCtx) error {

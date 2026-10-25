@@ -48,6 +48,9 @@ func selfcheck(ctx context.Context) (issue *systemIssue, err error) {
 	defer selfcheckLock.Unlock()
 
 	// Step 0: Check if self-check makes sense.
+	if !selfcheckSupported() {
+		return nil, fmt.Errorf("%w: not supported on this platform", errSelfcheckSkipped)
+	}
 	if !netenv.Online() {
 		return nil, fmt.Errorf("%w: device is offline or in limited network", errSelfcheckSkipped)
 	}
