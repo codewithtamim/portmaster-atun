@@ -18,9 +18,11 @@ func startInterception(packets chan packet.Packet) error {
 	}
 
 	// There is no eBPF on Android. The forwarders report connections and
-	// this worker reports their byte counts.
+	// this worker reports their byte counts. While the device sleeps it
+	// collects rarely: every collection with traffic writes to the history
+	// database. The app drives that through atun.SetBandwidthSleep.
 	module.mgr.Go("atun bandwidth stats monitor", func(wc *mgr.WorkerCtx) error {
-		return atun.BandwidthStatsWorker(wc.Ctx(), 1*time.Second, BandwidthUpdates)
+		return atun.BandwidthStatsWorker(wc.Ctx(), 1*time.Second, 30*time.Second, BandwidthUpdates)
 	})
 
 	return nil

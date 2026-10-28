@@ -4,26 +4,61 @@ package atun
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/safing/portmaster/base/log"
 	pmpacket "github.com/safing/portmaster/service/network/packet"
 )
 
+// bandwidthAsleep is the sleep state set by SetBandwidthSleep. It lives
+// outside the worker, so a worker started while the device sleeps starts
+// slow. bandwidthWake tells a running worker that the state changed.
+var (
+	bandwidthAsleep atomic.Bool
+	bandwidthWake   = make(chan struct{}, 1)
+)
+
+// SetBandwidthSleep switches the bandwidth worker between its awake and
+// asleep intervals. Safe to call at any time, from any goroutine.
+func SetBandwidthSleep(enabled bool) {
+	if bandwidthAsleep.Swap(enabled) == enabled {
+		return
+	}
+	select {
+	case bandwidthWake <- struct{}{}:
+	default:
+	}
+}
+
 // BandwidthStatsWorker reports bandwidth deltas; totals are maintained here from copy loop counts.
-func BandwidthStatsWorker(ctx context.Context, collectInterval time.Duration, bandwidthUpdates chan *pmpacket.BandwidthUpdate) error {
-	ticker := time.NewTicker(collectInterval)
-	defer ticker.Stop()
+//
+// It collects every collectInterval, or every sleepInterval while
+// SetBandwidthSleep has put it to sleep. The updates carry absolute totals,
+// so a slower tick batches bytes and loses none.
+func BandwidthStatsWorker(ctx context.Context, collectInterval, sleepInterval time.Duration, bandwidthUpdates chan *pmpacket.BandwidthUpdate) error {
+	interval := func() time.Duration {
+		if bandwidthAsleep.Load() {
+			return sleepInterval
+		}
+		return collectInterval
+	}
+
+	timer := time.NewTimer(interval())
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
+		case <-bandwidthWake:
+			// The interval changed. Restart the wait with the new one.
+		case <-timer.C:
 			if !reportBandwidth(ctx, bandwidthUpdates) {
 				return nil
 			}
 		}
+		timer.Reset(interval())
 	}
 }
 

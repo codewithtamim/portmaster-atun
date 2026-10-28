@@ -83,6 +83,7 @@ func startSession(ctx context.Context, profile *Profile) (*session, error) {
 		dev.Close()
 		return nil, fmt.Errorf("wireguard: device up: %w", err)
 	}
+	startHandshakes(dev, profile, resolved)
 
 	s := &session{
 		dev:       dev,
@@ -97,6 +98,30 @@ func startSession(ctx context.Context, profile *Profile) (*session, error) {
 
 	log.Infof("wireguard: device up for %q via %s, mtu %d", profile.Name, s.endpointString(), mtu)
 	return s, nil
+}
+
+// startHandshakes sends one keepalive to each peer that has no persistent
+// keepalive, which starts its handshake. wireguard-go only does this in Up
+// for peers with a persistent keepalive. The others would wait for outbound
+// traffic, and an idle phone may send none before check gives up on the
+// handshake and rebuilds the device.
+func startHandshakes(dev *device.Device, profile *Profile, resolved map[int]netip.AddrPort) {
+	for i, peer := range profile.Peers {
+		if peer.Keepalive > 0 {
+			continue
+		}
+		if _, ok := resolved[i]; !ok {
+			// No endpoint to send to.
+			continue
+		}
+		var key device.NoisePublicKey
+		if err := key.FromHex(mustHex(peer.PublicKey)); err != nil {
+			continue
+		}
+		if p := dev.LookupPeer(key); p != nil {
+			p.SendKeepalive()
+		}
+	}
 }
 
 func (s *session) close() {

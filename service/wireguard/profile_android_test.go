@@ -49,8 +49,19 @@ func TestParseProfile(t *testing.T) {
 		t.Fatalf("ParseProfile: %s", err)
 	}
 
-	if got := p.Peers[0].Keepalive; got != defaultKeepalive {
-		t.Errorf("Keepalive = %d, want the default %d", got, defaultKeepalive)
+	if got := p.Peers[0].Keepalive; got != 0 {
+		t.Errorf("Keepalive = %d, want 0: a profile without one keeps it off", got)
+	}
+	if strings.Contains(p.UAPI(nil), "persistent_keepalive_interval") {
+		t.Error("uapi sets a keepalive the profile does not have")
+	}
+
+	set, err := ParseProfile(validProfile(`"endpointPort": 51820`, `"endpointPort": 51820, "keepalive": 25`))
+	if err != nil {
+		t.Fatalf("ParseProfile with keepalive: %s", err)
+	}
+	if got := set.Peers[0].Keepalive; got != 25 {
+		t.Errorf("Keepalive = %d, want the profile's 25", got)
 	}
 
 	v4, v6 := p.Captures()

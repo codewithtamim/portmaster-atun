@@ -25,9 +25,12 @@ const (
 
 	// Keepalive on the app-side endpoint finds apps that went away without a
 	// FIN, so their upstream socket is released instead of idling forever.
+	// The upstream dialer uses the same values to find dead peers. Each probe
+	// wakes the engine, and upstream also the radio, so they are rare: a leak
+	// guard, not a liveness check.
 	tcpKeepaliveCount    = 9
-	tcpKeepaliveIdle     = 60 * time.Second
-	tcpKeepaliveInterval = 30 * time.Second
+	tcpKeepaliveIdle     = 10 * time.Minute
+	tcpKeepaliveInterval = 75 * time.Second
 )
 
 func newTCPForwarder(s *stackSession) *tcp.Forwarder {

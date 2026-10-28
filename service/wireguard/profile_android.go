@@ -26,9 +26,6 @@ const (
 	maxTunnelMTU      = 1420
 	wireGuardOverhead = 80
 
-	// defaultKeepalive is installed when a profile has none.
-	defaultKeepalive = 25
-
 	keyLen = 32
 )
 
@@ -156,9 +153,9 @@ func (p *Profile) validatePeers() ([]netip.Prefix, error) {
 			}
 		}
 		allowed = append(allowed, peer.AllowedIPs...)
-		if peer.Keepalive == 0 {
-			peer.Keepalive = defaultKeepalive
-		}
+		// A keepalive of 0 stays off, as in the WireGuard app: a forced one
+		// woke the radio every few seconds on an idle tunnel. Profiles that
+		// need it, to keep a NAT mapping open, set it themselves.
 	}
 
 	return allowed, nil

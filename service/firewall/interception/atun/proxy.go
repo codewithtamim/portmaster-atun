@@ -49,7 +49,20 @@ const defaultNameserverAddress = ""
 // dialer protects every upstream socket with VpnService.protect. Do not dial
 // upstream with anything else: an unprotected socket is routed back into this
 // TUN and loops.
-var dialer = aprotect.NewDialer()
+//
+// Keep-alive is slow, like the app-side endpoint's. A zero Dialer probes every
+// 15 seconds once idle, so each idle app connection woke the radio that often.
+// It cannot be off: an app's TCP keep-alive probes are answered by the stack
+// and never reach this socket, so this probe is the only one that refreshes
+// the NAT mapping of an idle connection and finds a dead upstream.
+var dialer = aprotect.ApplyToDialer(&net.Dialer{
+	KeepAliveConfig: net.KeepAliveConfig{
+		Enable:   true,
+		Idle:     tcpKeepaliveIdle,
+		Interval: tcpKeepaliveInterval,
+		Count:    tcpKeepaliveCount,
+	},
+})
 
 var (
 	tcpBufPool = sync.Pool{New: func() any {
