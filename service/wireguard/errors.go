@@ -1,10 +1,10 @@
 // Package wireguard runs a userspace WireGuard device as a routing target.
-// Android only. The supervisor worker is the only goroutine that starts or stops the device.
+// The device is started only on Android; on other platforms the module is
+// inert. The supervisor worker is the only goroutine that starts or stops it.
 package wireguard
 
 import "errors"
 
-// Errors.
 var (
 	// ErrNoProfile is returned when no profile is installed.
 	ErrNoProfile = errors.New("wireguard: no profile installed")

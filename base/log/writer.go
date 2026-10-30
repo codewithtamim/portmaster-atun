@@ -63,6 +63,9 @@ func (l *LogWriter) Write(buf []byte) (int, error) {
 	}
 
 	if l.isAndroid {
+		if androidLog == nil {
+			return 0, fmt.Errorf("android log not initialized")
+		}
 		androidLog(InfoLevel, string(buf))
 		return len(buf), nil
 	}
@@ -83,6 +86,9 @@ func (l *LogWriter) WriteMessage(msg Message, duplicates uint64) {
 	}
 
 	if l.isAndroid {
+		if androidLog == nil {
+			return
+		}
 		line := msg.(*logLine) //nolint:forcetypeassert // Can only be *logLine.
 		androidLog(line.level, formatLine(line, duplicates, false))
 		return

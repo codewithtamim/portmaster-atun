@@ -4,6 +4,7 @@
 // https://developer.android.com/reference/android/net/ConnectivityManager#getConnectionOwnerUid(int,%20java.net.InetSocketAddress,%20java.net.InetSocketAddress)
 package aconn
 
+// UnknownUID is the owner reported when no UID could be attributed.
 const UnknownUID = -1
 
 // OwnerResolver must call ConnectivityManager.getConnectionOwnerUid, which only
@@ -14,10 +15,12 @@ type OwnerResolver interface {
 	GetConnectionOwnerUid(protocol int32, localAddr string, localPort int32, remoteAddr string, remotePort int32) int32
 }
 
+// AppInfoProvider returns the app details of a UID as a JSON encoded AppInfo.
 type AppInfoProvider interface {
 	GetAppInfoJSON(uid int32) string
 }
 
+// AppInfo describes the app that owns a UID.
 type AppInfo struct {
 	UID          int      `json:"uid"`
 	PackageName  string   `json:"packageName"`            // Primary package; the app identifier.
@@ -36,6 +39,7 @@ type AppInfo struct {
 	SourceDir string `json:"sourceDir"`
 }
 
+// Name returns the user visible app name, falling back to the package name.
 func (a *AppInfo) Name() string {
 	switch {
 	case a == nil:

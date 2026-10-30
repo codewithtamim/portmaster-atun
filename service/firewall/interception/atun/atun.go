@@ -17,7 +17,6 @@ import (
 	pmpacket "github.com/safing/portmaster/service/network/packet"
 )
 
-// Errors.
 var (
 	ErrInvalidFD         = errors.New("atun: invalid TUN fd")
 	ErrInvalidMTU        = errors.New("atun: invalid TUN mtu")

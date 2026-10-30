@@ -1,3 +1,5 @@
+// Package anet carries the network interface details reported by the Android
+// app, since the core cannot read them from the system itself.
 package anet
 
 import (
@@ -12,12 +14,16 @@ var (
 	errInvalidPrefix    = errors.New("invalid prefix length")
 )
 
+// NetworkAddress is an interface address with its prefix length.
 type NetworkAddress struct {
 	Addr         string `json:"addr"`
 	PrefixLength int    `json:"prefixLength"`
 	IsIPv6       bool   `json:"isIPv6"`
 }
 
+// ToIPNet returns the address as a net.IPNet. It fails if the address does not
+// parse, if IsIPv6 does not match the address family, or if the prefix length
+// is out of range.
 func (a *NetworkAddress) ToIPNet() (*net.IPNet, error) {
 	ip := net.ParseIP(a.Addr)
 	if ip == nil {
@@ -43,10 +49,12 @@ func (a *NetworkAddress) ToIPNet() (*net.IPNet, error) {
 	return &net.IPNet{IP: ip, Mask: mask}, nil
 }
 
+// String returns the address without its prefix length.
 func (a *NetworkAddress) String() string {
 	return a.Addr
 }
 
+// NetworkInterface is an interface as reported by the Android app.
 type NetworkInterface struct {
 	Name      string           `json:"name"`
 	Index     int              `json:"index"`
@@ -60,14 +68,18 @@ type NetworkInterface struct {
 	Flags net.Flags `json:"-"`
 }
 
+// Provider returns the current interfaces as a JSON encoded []NetworkInterface.
 type Provider interface {
 	GetInterfacesJSON() string
 }
 
+// Notifier is told when the network changes.
 type Notifier interface {
 	OnNetworkChange()
 }
 
+// ToNetInterface returns the interface as a net.Interface and its addresses.
+// Addresses that fail to parse are skipped.
 func (i *NetworkInterface) ToNetInterface() (net.Interface, []net.Addr) {
 	i.setFlagsValue()
 	iface := net.Interface{

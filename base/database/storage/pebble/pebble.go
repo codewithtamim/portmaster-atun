@@ -1,3 +1,6 @@
+//go:build android
+
+// Package pebble provides the Android database backend.
 package pebble
 
 import (
@@ -151,11 +154,28 @@ func (p *Pebble) PutMany(shadowDelete bool) (chan<- record.Record, <-chan error)
 	errs := make(chan error, 1)
 
 	go func() {
-		// The batch is only staged in memory, so the lock is held per
-		// commit instead of while waiting on the caller to send records.
+		// The batch is only staged in memory, so the lock is held for creating
+		// and closing it and per commit, instead of while waiting on the caller
+		// to send records.
+		if err := p.rLockOpen(); err != nil {
+			// Drain until the caller finishes so that it does not block on the
+			// batch channel.
+			for range batch {
+			}
+			errs <- err
+			return
+		}
 		b := p.db.NewBatch()
+		p.closeLock.RUnlock()
+
 		defer func() {
+			// Closing a batch of a shut down database panics, so this use of db
+			// holds closeLock as well.
+			if err := p.rLockOpen(); err != nil {
+				return
+			}
 			_ = b.Close()
+			p.closeLock.RUnlock()
 		}()
 
 		for r := range batch {

@@ -440,8 +440,10 @@ func checkFilterLists(ctx context.Context, conn *network.Connection, p *profile.
 		for _, blockedListID := range conn.Entity.BlockedByLists {
 			for _, unbreakListID := range resolvedUnbreakFilterListIDs {
 				if blockedListID == unbreakListID {
+					// An unbreak-list match only cancels the filter-list block; it does
+					// not allow the connection on its own, so the verdict stays unset.
 					log.Tracer(ctx).Debugf("filter: unbreak filter %s matched, ignoring other filter list matches", unbreakListID)
-					return concludeUnbreakMatch(ctx, conn, reason, unbreakListID)
+					return false
 				}
 			}
 		}
