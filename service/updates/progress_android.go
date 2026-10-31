@@ -14,7 +14,10 @@ import (
 
 // Progress states reported to API clients.
 const (
-	ProgressIdle             = "idle"
+	ProgressIdle = "idle"
+	// ProgressChecking is a user's update request before any artifact bytes
+	// move: waiting for a background check, then fetching the index.
+	ProgressChecking         = "checking"
 	ProgressDownloading      = "downloading"
 	ProgressFailed           = "failed"
 	ProgressReady            = "ready"
@@ -39,6 +42,8 @@ type progressTracker struct {
 	cacheActive                 atomic.Bool
 	filterListsReadyCheck       atomic.Value // func() bool
 	filterListsLastUpdatedCheck atomic.Value // func() int64
+	forcePending                atomic.Bool  // a user's update request is in progress
+	attemptsFinished            atomic.Int64
 }
 
 // Progress is byte-level intel download status for HTTP clients.
@@ -57,6 +62,9 @@ type Progress struct {
 	CacheLoadedBytes int64 `json:"cacheLoadedBytes,omitempty"`
 	// CacheTotalBytes is the on-disk size of the list files being imported.
 	CacheTotalBytes int64 `json:"cacheTotalBytes,omitempty"`
+	// AttemptsFinished counts ended update attempts. A client compares it across
+	// a request to learn when that attempt ended, and State is then its outcome.
+	AttemptsFinished int64 `json:"attemptsFinished"`
 }
 
 // SetFilterListsReadyCheck lets filterlists report whether blooms are loaded.
@@ -93,20 +101,22 @@ func (u *Updater) Progress() Progress {
 		Metered:          intelProgressMetered(),
 		CacheLoadedBytes: u.cacheLoadedBytes.Load(),
 		CacheTotalBytes:  u.cacheTotalBytes.Load(),
+		AttemptsFinished: u.attemptsFinished.Load(),
 	}
 }
 
-// beginProgress starts a new download. The approved total from
+// beginProgress starts a new attempt. The approved total from
 // stageIntelForApproval is kept, so the bar does not jump when artifact
 // requests report their own sizes. Without one, the total is summed from
-// the artifact responses.
+// the artifact responses. The state moves to downloading once readBody sees
+// artifact bytes: most checks end at the index and never get there.
 func (u *Updater) beginProgress() {
 	u.downloadedBytes.Store(0)
 	if !u.totalStaged.Load() {
 		u.totalBytes.Store(0)
 	}
 	u.requiredBytes.Store(0)
-	u.progressState.Store(ProgressDownloading)
+	u.progressState.Store(ProgressChecking)
 }
 
 // noteStorageShortfall records how many bytes the unpack needed when the
@@ -158,7 +168,10 @@ func (c countingReader) Read(p []byte) (int, error) {
 
 // endProgress maps the result of updateAndUpgrade to the state the UI shows.
 // The staged total is used up by the download it was staged for.
+//
+// The counter moves last, so a client that sees it change reads the outcome.
 func (u *Updater) endProgress(err error) {
+	defer u.attemptsFinished.Add(1)
 	u.totalStaged.Store(false)
 
 	switch {
@@ -169,7 +182,11 @@ func (u *Updater) endProgress(err error) {
 			u.setProgressState(ProgressReady)
 		}
 	case errors.Is(err, ErrSameIndex), errors.Is(err, ErrNoUpdateAvailable), errors.Is(err, ErrActionRequired):
-		u.setProgressState(ProgressIdle)
+		if u.cacheActive.Load() {
+			u.setProgressState(ProgressRebuilding)
+		} else {
+			u.setProgressState(ProgressIdle)
+		}
 	case errors.Is(err, syscall.ENOSPC):
 		u.noteStorageShortfall()
 		u.setProgressState(ProgressStorage)
@@ -188,6 +205,9 @@ func (d *Downloader) readBody(resp *http.Response) ([]byte, error) {
 	const maxDownloadPrealloc = 64 << 20
 
 	counting := d.index != nil
+	if counting {
+		d.u.setProgressState(ProgressDownloading)
+	}
 
 	var buf bytes.Buffer
 	if resp.ContentLength > 0 {
