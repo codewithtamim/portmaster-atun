@@ -19,4 +19,7 @@ func endCacheLoad() {}
 func countCacheBytes(r io.Reader) io.Reader { return r }
 
 // cacheUpdatedAt is zero, which leaves LastUpdatedUnix out of the record.
-func cacheUpdatedAt(time.Time) int64 { return 0 }
+func cacheUpdatedAt(string, time.Time) int64 { return 0 }
+
+// persistCache is a no-op: desktop databases sync their own writes.
+func persistCache() error { return nil }

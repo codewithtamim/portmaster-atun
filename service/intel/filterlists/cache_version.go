@@ -93,9 +93,12 @@ func setCacheDatabaseVersion(ver string) error {
 	verRecord := &cacheVersionRecord{
 		Version:         ver,
 		Reset:           resetVersion,
-		LastUpdatedUnix: cacheUpdatedAt(time.Now()),
+		LastUpdatedUnix: cacheUpdatedAt(ver, time.Now()),
 	}
 
 	verRecord.SetKey(filterListCacheVersionKey)
-	return cache.Put(verRecord)
+	if err := cache.Put(verRecord); err != nil {
+		return err
+	}
+	return persistCache()
 }

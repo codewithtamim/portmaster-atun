@@ -42,6 +42,37 @@ var UnsyncedDatabases = map[string]bool{}
 
 var errClosed = errors.New("pebble: database is closed")
 
+// opened holds the databases opened through NewPebble, by name, for Sync.
+var (
+	openedLock sync.Mutex
+	opened     = map[string]*Pebble{}
+)
+
+// Sync makes every write made so far to the named database durable.
+//
+// Without a sync, pebble keeps the last partly filled WAL block in memory, and
+// Android usually ends the process without closing the database, so the most
+// recent writes of an unsynced database are lost. Call Sync after writing a
+// state that is expensive to rebuild, such as the version record that marks a
+// finished filter-list import. An unknown or closed database is a no-op.
+func Sync(name string) error {
+	openedLock.Lock()
+	p := opened[name]
+	openedLock.Unlock()
+	if p == nil {
+		return nil
+	}
+	if err := p.rLockOpen(); err != nil {
+		if errors.Is(err, errClosed) {
+			return nil
+		}
+		return err
+	}
+	defer p.closeLock.RUnlock()
+	// A synced WAL write flushes and syncs everything queued before it.
+	return p.db.LogData([]byte("sync"), crdb.Sync)
+}
+
 // Pebble is a storage backed by a pebble database.
 type Pebble struct {
 	name  string
@@ -64,7 +95,14 @@ func NewPebble(name, location string) (storage.Interface, error) {
 	if UnsyncedDatabases[name] {
 		write = crdb.NoSync
 	}
-	return open(name, location, write)
+	p, err := open(name, location, write)
+	if err != nil {
+		return nil, err
+	}
+	openedLock.Lock()
+	opened[name] = p
+	openedLock.Unlock()
+	return p, nil
 }
 
 func open(name, location string, write *crdb.WriteOptions) (*Pebble, error) {
@@ -489,6 +527,11 @@ func (p *Pebble) Shutdown() error {
 		return nil
 	}
 	p.closed = true
+	openedLock.Lock()
+	if opened[p.name] == p {
+		delete(opened, p.name)
+	}
+	openedLock.Unlock()
 	return p.db.Close()
 }
 
