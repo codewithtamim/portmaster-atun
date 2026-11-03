@@ -37,6 +37,11 @@ type AppInfo struct {
 	// segments that change whenever the app is updated. Use PackageName, not
 	// this path, to identify an app.
 	SourceDir string `json:"sourceDir"`
+
+	// AndroidUser is the Android user the UID belongs to (uid / 100000).
+	// Non-zero for a cloned app: the same package running as another user,
+	// which must stay a separate firewall identity from the original.
+	AndroidUser int `json:"androidUser,omitempty"`
 }
 
 // Name returns the user visible app name, falling back to the package name.

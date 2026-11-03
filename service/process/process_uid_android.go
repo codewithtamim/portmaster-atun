@@ -219,11 +219,13 @@ func attachSharedProfile(info *aconn.AppInfo) {
 	if info == nil || info.SharedUserID == "" {
 		return
 	}
-	if _, loaded := sharedProfileReady.LoadOrStore(info.SharedUserID, struct{}{}); loaded {
+	// A clone's shared identity carries its Android user, as its tag does.
+	id := profile.AndroidUserIdentity(info.SharedUserID, info.AndroidUser)
+	if _, loaded := sharedProfileReady.LoadOrStore(id, struct{}{}); loaded {
 		return
 	}
-	if _, err := profile.EnsureSharedAndroidProfile(info.SharedUserID, info.Name(), info.Packages); err != nil {
-		sharedProfileReady.Delete(info.SharedUserID)
-		log.Warningf("profile: shared identity %s: %s", info.SharedUserID, err)
+	if _, err := profile.EnsureSharedAndroidProfile(id, info.Name(), info.Packages); err != nil {
+		sharedProfileReady.Delete(id)
+		log.Warningf("profile: shared identity %s: %s", id, err)
 	}
 }

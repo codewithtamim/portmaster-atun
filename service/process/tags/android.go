@@ -41,6 +41,11 @@ func (h *AndroidHandler) TagDescriptions() []process.TagDescription {
 			Description: "The package name of the Android app that owns the connection.",
 		},
 		{
+			ID:          profile.AndroidUserPackageTagKey,
+			Name:        "Android Package of Another User",
+			Description: "The package and Android user of a cloned app, kept apart from the original.",
+		},
+		{
 			ID:          profile.AndroidUIDTagKey,
 			Name:        "Android UID",
 			Description: "The UID that the Android app runs as. Apps may be reassigned a UID after reinstalling.",
@@ -66,18 +71,24 @@ func (h *AndroidHandler) AddTags(p *process.Process) {
 		return
 	}
 
+	// A cloned app is the same package as another Android user. Its identity
+	// carries the user, so the clone and the original never share rules.
 	if info.SharedUserID != "" {
 		p.Tags = append(p.Tags, profile.Tag{
 			Key:   profile.AndroidSharedUserTagKey,
-			Value: info.SharedUserID,
+			Value: profile.AndroidUserIdentity(info.SharedUserID, info.AndroidUser),
 		})
 		return
 	}
 
+	packageKey := profile.AndroidPackageTagKey
+	if info.AndroidUser > 0 {
+		packageKey = profile.AndroidUserPackageTagKey
+	}
 	p.Tags = append(p.Tags,
 		profile.Tag{
-			Key:   profile.AndroidPackageTagKey,
-			Value: info.PackageName,
+			Key:   packageKey,
+			Value: profile.AndroidUserIdentity(info.PackageName, info.AndroidUser),
 		},
 		profile.Tag{
 			Key:   profile.AndroidUIDTagKey,
@@ -94,6 +105,9 @@ func (h *AndroidHandler) CreateProfile(p *process.Process) *profile.Profile {
 	tag, ok := p.GetTag(profile.AndroidSharedUserTagKey)
 	if !ok {
 		tag, ok = p.GetTag(profile.AndroidPackageTagKey)
+	}
+	if !ok {
+		tag, ok = p.GetTag(profile.AndroidUserPackageTagKey)
 	}
 	if !ok {
 		return nil

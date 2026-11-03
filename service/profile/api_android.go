@@ -45,6 +45,7 @@ type Snapshot struct {
 	Internal            bool     `json:"internal"`
 	PackageName         string   `json:"packageName"`
 	SharedUserID        string   `json:"sharedUserId,omitempty"`
+	AndroidUser         int      `json:"androidUser,omitempty"`
 	BlockInternet       bool     `json:"blockInternet"`
 	BlockInternetSet    bool     `json:"blockInternetSet"`
 	BlockOnMobile       bool     `json:"blockOnMobile"`
@@ -473,14 +474,23 @@ func snapshotFromProfile(p *Profile) Snapshot {
 		lists = []string{}
 	}
 
+	packageName := fingerprintValue(p.Fingerprints, AndroidPackageTagKey)
+	sharedUserID, androidUser := SplitAndroidUserIdentity(fingerprintValue(p.Fingerprints, AndroidSharedUserTagKey))
+	if packageName == "" {
+		if v := fingerprintValue(p.Fingerprints, AndroidUserPackageTagKey); v != "" {
+			packageName, androidUser = SplitAndroidUserIdentity(v)
+		}
+	}
+
 	return Snapshot{
 		Source:              string(p.Source),
 		ID:                  p.ID,
 		Name:                p.Name,
 		Description:         p.Description,
 		Internal:            p.Internal,
-		PackageName:         fingerprintValue(p.Fingerprints, AndroidPackageTagKey),
-		SharedUserID:        fingerprintValue(p.Fingerprints, AndroidSharedUserTagKey),
+		PackageName:         packageName,
+		SharedUserID:        sharedUserID,
+		AndroidUser:         androidUser,
 		BlockInternet:       blockInternet,
 		BlockInternetSet:    blockInternetSet,
 		BlockOnMobile:       blockOnMobile,
@@ -538,6 +548,11 @@ func EnsureSharedAndroidProfile(sharedUserID, name string, members []string) (Sn
 		}
 	} else if err := renameProfile(existing, name); err != nil {
 		return Snapshot{}, err
+	}
+	// Member profiles are the original user's. A clone's shared identity must
+	// not take over or drop them.
+	if _, user := SplitAndroidUserIdentity(sharedUserID); user > 0 {
+		members = nil
 	}
 	if err := adoptMemberOverlay(existing, members); err != nil {
 		return Snapshot{}, err
