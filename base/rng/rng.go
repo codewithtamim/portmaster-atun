@@ -79,7 +79,9 @@ func (r *Rng) Start() error {
 	r.mgr.Go("os rng feeder", osFeeder)
 
 	// random source: goroutine ticks
-	r.mgr.Go("tick rng feeder", tickFeeder)
+	if runTickFeeder {
+		r.mgr.Go("tick rng feeder", tickFeeder)
+	}
 
 	// full feeder
 	r.mgr.Go("full feeder", fullFeeder)
