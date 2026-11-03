@@ -459,7 +459,13 @@ func clientCheckHomeHubConnection(ctx *mgr.WorkerCtx) clientComponentResult {
 	}
 
 	// Ping home hub.
+	bytesBefore := homeLinkBytesIn(crane)
 	latency, tErr := pingHome(ctx, crane.Controller, clientHealthCheckTimeout)
+	if tErr != nil && tErr.Is(terminal.ErrTimeout) && homeLinkBusy(crane, bytesBefore) {
+		log.Infof("spn/captain: home hub ping timed out on a busy link, keeping it")
+		lastHealthCheck = time.Now()
+		return clientResultOk
+	}
 	if tErr != nil {
 		log.Warningf("spn/captain: failed to ping home hub: %s", tErr)
 
