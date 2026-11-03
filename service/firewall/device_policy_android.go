@@ -9,6 +9,7 @@ import (
 	"github.com/safing/portmaster/base/utils/aconn"
 	"github.com/safing/portmaster/service/network"
 	"github.com/safing/portmaster/service/network/packet"
+	"github.com/safing/portmaster/service/process"
 	"github.com/safing/portmaster/service/profile"
 )
 
@@ -16,13 +17,45 @@ import (
 // allowed while the phone is locked.
 const androidFirstAppUID = 10000
 
-func checkDevicePolicy(ctx context.Context, conn *network.Connection, p *profile.LayeredProfile, _ packet.Packet) bool {
+// pushDeliveryIdentities carry push messages for other apps. Blocking them
+// while locked would silence every app's notifications, so they stay allowed
+// like the system. Matched on the package or shared user id; Play Services and
+// the Services Framework share "com.google.uid.shared". microG and sandboxed
+// Play on GrapheneOS use the same package names.
+var pushDeliveryIdentities = map[string]struct{}{
+	"com.google.android.gms": {},
+	"com.google.android.gsf": {},
+	"com.google.uid.shared":  {},
+}
+
+// exemptWhileLocked reports whether the app keeps network access while the
+// phone is locked: the system, and the push services other apps rely on.
+func exemptWhileLocked(proc *process.Process) bool {
+	if proc.UserID < androidFirstAppUID {
+		return true
+	}
+	for _, id := range []string{proc.ExecName, proc.UserName, proc.Path} {
+		if _, ok := pushDeliveryIdentities[id]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func checkDevicePolicy(ctx context.Context, conn *network.Connection, p *profile.LayeredProfile, pkt packet.Packet) bool {
 	if conn.Inbound {
 		return false
 	}
 	proc := conn.Process()
 	if proc == nil {
 		return false
+	}
+	// While a Wi-Fi sign-in page is up, its connectivity domains are let
+	// through before the lock and mobile blocks and before rules. Otherwise
+	// a strict setup leaves the phone offline on hotel or cafe Wi-Fi with no
+	// way to sign in. A fully blocked app still gets no grant.
+	if conn.Entity != nil && checkConnectivityDomain(ctx, conn, p, pkt) {
+		return true
 	}
 
 	state := aconn.CurrentDeviceState()
@@ -32,7 +65,7 @@ func checkDevicePolicy(ctx context.Context, conn *network.Connection, p *profile
 	onMobile := state.Metered || state.Cellular
 	onWifi := state.Wifi && !onMobile
 	switch {
-	case state.Locked && p.BlockOnLock() && proc.UserID >= androidFirstAppUID:
+	case state.Locked && p.BlockOnLock() && !exemptWhileLocked(proc):
 		log.Tracer(ctx).Infof("filter: blocking %s while the phone is locked", conn)
 		conn.Block("blocked while the phone is locked", profile.CfgOptionBlockOnLockKey)
 		return true

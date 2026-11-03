@@ -8,6 +8,7 @@ import (
 
 	"github.com/safing/portmaster/base/utils/aconn"
 	"github.com/safing/portmaster/service/network"
+	"github.com/safing/portmaster/service/process"
 	"github.com/safing/portmaster/service/profile"
 )
 
@@ -92,6 +93,24 @@ func TestMeteredIsMobile(t *testing.T) { //nolint:paralleltest // device state i
 		}
 		if got && conn.Reason.Msg != tc.wantReason {
 			t.Errorf("%s: reason %q, want %q", tc.name, conn.Reason.Msg, tc.wantReason)
+		}
+	}
+}
+
+func TestPushServicesExemptWhileLocked(t *testing.T) {
+	cases := []struct {
+		name string
+		proc *process.Process
+		want bool
+	}{
+		{"system", &process.Process{UserID: 1000}, true},
+		{"play services", &process.Process{UserID: 10150, ExecName: "com.google.android.gms"}, true},
+		{"shared google uid", &process.Process{UserID: 10150, ExecName: "com.google.android.gsf.login", Path: "com.google.uid.shared"}, true},
+		{"ordinary app", &process.Process{UserID: 10200, ExecName: "com.example.chat", Path: "/data/app/x/base.apk"}, false},
+	}
+	for _, c := range cases {
+		if got := exemptWhileLocked(c.proc); got != c.want {
+			t.Errorf("%s: exemptWhileLocked = %v, want %v", c.name, got, c.want)
 		}
 	}
 }
