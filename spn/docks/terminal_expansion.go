@@ -44,6 +44,7 @@ func ExpandTo(from terminal.Terminal, routeTo string, encryptFor *hub.Hub) (*Exp
 	// Create options and bare expansion terminal.
 	opts := terminal.DefaultExpansionTerminalOpts()
 	opts.Encrypt = encryptFor != nil
+	adjustExpansionOpts(opts)
 	expansion := &ExpansionTerminal{
 		changeNotifyFuncReady: abool.New(),
 	}

@@ -131,7 +131,7 @@ func NewConnectOp(tunnel *Tunnel) (*ConnectOp, *terminal.Error) {
 
 	// Set defaults.
 	if request.QueueSize == 0 {
-		request.QueueSize = terminal.DefaultQueueSize
+		request.QueueSize = connectQueueSize
 	}
 
 	// Create new op.
