@@ -231,6 +231,11 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 	if UserAgent != "" {
 		req.Header.Set("User-Agent", UserAgent)
 	}
+	// Android only; always 0 elsewhere. See resumeOffset.
+	offset := d.resumeOffset(url)
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+	}
 
 	// Start request with shared http client.
 	resp, err := d.httpClient.Do(req)
@@ -240,12 +245,12 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 	defer func() { _ = resp.Body.Close() }()
 
 	// Check for HTTP status errors.
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && (offset == 0 || resp.StatusCode != http.StatusPartialContent) {
 		return nil, fmt.Errorf("server returned non-OK status: %d %s", resp.StatusCode, resp.Status)
 	}
 
 	// Read the full body and return it.
-	content, err := d.readBody(resp)
+	content, err := d.readBody(resp, url, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read body of response: %w", err)
 	}

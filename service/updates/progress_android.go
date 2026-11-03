@@ -3,10 +3,8 @@
 package updates
 
 import (
-	"bytes"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"sync/atomic"
 	"syscall"
@@ -193,37 +191,6 @@ func (u *Updater) endProgress(err error) {
 	default:
 		u.setProgressState(ProgressFailed)
 	}
-}
-
-// readBody reads a download while counting its bytes for the UI. The index is
-// downloaded before d.index is set and is not counted: the UI shows artifact
-// bytes only.
-//
-// Preallocation is capped: Content-Length is untrusted, and a huge value would
-// be allocated up front, and overflow int on 32-bit ABIs.
-func (d *Downloader) readBody(resp *http.Response) ([]byte, error) {
-	const maxDownloadPrealloc = 64 << 20
-
-	counting := d.index != nil
-	if counting {
-		d.u.setProgressState(ProgressDownloading)
-	}
-
-	var buf bytes.Buffer
-	if resp.ContentLength > 0 {
-		if counting {
-			d.u.addTotal(resp.ContentLength)
-		}
-		buf.Grow(int(min(resp.ContentLength, maxDownloadPrealloc)))
-	}
-	var body io.Reader = resp.Body
-	if counting {
-		body = countingReader{r: resp.Body, add: d.u.addDownloaded}
-	}
-	if _, err := io.Copy(&buf, body); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
 // countExistingFile counts an artifact that is already on disk as downloaded,
