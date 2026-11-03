@@ -128,6 +128,13 @@ func (c *countingConn) CloseWrite() error {
 // decide submits the flow and waits for its verdict. It fails closed: no
 // verdict, for any reason, is MarkDrop. The caller enforces the mark.
 func decide(s *stackSession, q *Queue, f *flow) int {
+	// Non-DNS traffic to a routed-in local DNS server is local traffic and
+	// gets no decision. See localDNSHosts.
+	if !isDNSPort(f.info) && isLocalDNSHost(f.info.Dst) {
+		f.mark.Store(int32(MarkAcceptAlways))
+		return MarkAcceptAlways
+	}
+
 	pkt := q.newPacket(f.info)
 
 	if !q.submit(pkt) {
