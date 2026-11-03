@@ -145,6 +145,11 @@ func handleConfigReset(_ *api.Request) (any, error) {
 		captain.CfgOptionEnableSPNKey,
 		resolver.CfgOptionNameServersKey,
 		resolver.CfgOptionUseSPNKey,
+		profile.CfgOptionPreventBypassingKey,
+		// routing.CfgOptionTargetKey and CfgOptionLockdownKey; literals keep core
+		// free of the routing import.
+		"routing/target",
+		"routing/lockdown",
 	}
 	for _, key := range keys {
 		if _, err := config.GetOption(key); err != nil {
