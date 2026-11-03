@@ -85,7 +85,7 @@ func start() error {
 			}
 
 			enabled := config.GetAsBool("spn/enable", false)
-			if enabled() {
+			if spnWanted(enabled()) {
 				log.Info("spn: starting SPN")
 				module.mgr.Go("ensure SPN is started", module.instance.SPNGroup().EnsureStartedWorker)
 			} else {
@@ -100,7 +100,7 @@ func start() error {
 
 		// Check if we need to enable SPN now.
 		enabled := config.GetAsBool("spn/enable", false)
-		if enabled() {
+		if spnWanted(enabled()) {
 			module.mgr.Go("ensure SPN is started", module.instance.SPNGroup().EnsureStartedWorker)
 		}
 

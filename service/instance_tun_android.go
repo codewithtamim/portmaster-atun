@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/safing/portmaster/service/firewall/interception/atun"
+	"github.com/safing/portmaster/spn/access"
 )
 
 // tunLock serializes StartTun and StopTun. Both are called from Java, and
@@ -36,7 +37,12 @@ func (i *Instance) StartTun(fd, mtu int, tunAddr, fakeDNS string) error {
 	}
 
 	atun.SetTunConfig(cfg)
-	return i.serviceGroupInterception.Start()
+	if err := i.serviceGroupInterception.Start(); err != nil {
+		return err
+	}
+	// The SPN only runs while protection is on, see access.SetTunnelUp.
+	access.SetTunnelUp(true)
+	return nil
 }
 
 // StopTun stops interception and forgets the TUN.
@@ -44,6 +50,7 @@ func (i *Instance) StopTun() error {
 	tunLock.Lock()
 	defer tunLock.Unlock()
 
+	access.SetTunnelUp(false)
 	err := i.serviceGroupInterception.Stop()
 	atun.ClearTunConfig()
 	return err
