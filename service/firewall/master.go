@@ -437,6 +437,10 @@ func checkFilterLists(ctx context.Context, conn *network.Connection, p *profile.
 	case endpoints.Denied:
 		// If the connection matches a filter list, check if the "unbreak" list matches too and abort blocking.
 		resolvedUnbreakFilterListIDs := filterlists.GetUnbreakFilterListIDs()
+		// Android only; always true elsewhere. See unbreakMayLift.
+		if !unbreakMayLift(conn) {
+			resolvedUnbreakFilterListIDs = nil
+		}
 		for _, blockedListID := range conn.Entity.BlockedByLists {
 			for _, unbreakListID := range resolvedUnbreakFilterListIDs {
 				if blockedListID == unbreakListID {
