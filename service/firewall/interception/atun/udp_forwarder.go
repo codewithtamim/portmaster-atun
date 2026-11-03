@@ -95,6 +95,8 @@ func handleUDPFlow(s *stackSession, id stack.TransportEndpointID, appConn net.Co
 		// Handled below.
 	case markIsBlock(mark):
 		log.Tracef("atun: blocking udp %s", connID)
+		// Fail fast, like the RST a blocked TCP flow gets.
+		rejectUDP(s, id)
 
 		return
 	default:
