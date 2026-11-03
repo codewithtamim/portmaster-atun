@@ -7,7 +7,7 @@ import (
 )
 
 func cleaner(ctx *mgr.WorkerCtx) error { //nolint:unparam // Conforms to worker interface
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(cleanerInterval)
 	defer ticker.Stop()
 
 	for {
