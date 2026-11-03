@@ -244,8 +244,32 @@ func addSettingsSection(di *debug.Info) {
 	di.AddSection("Settings", debug.UseCodeSection|debug.AddContentLineBreaks, lines...)
 }
 
+// reportSettingKeys is the allowlist of settings the report may show. Only
+// switches and fixed choices: never free text, lists, rules or addresses.
+var reportSettingKeys = map[string]struct{}{
+	profile.CfgOptionDefaultActionKey:    {},
+	profile.CfgOptionBlockOnMobileKey:    {},
+	profile.CfgOptionBlockOnLockKey:      {},
+	profile.CfgOptionEnableHistoryKey:    {},
+	profile.CfgOptionPreventBypassingKey: {},
+	profile.CfgOptionUseSPNKey:           {},
+	profile.CfgOptionRoutingAlgorithmKey: {},
+	captain.CfgOptionEnableSPNKey:        {},
+	resolver.CfgOptionUseSPNKey:          {},
+	"routing/target":                     {},
+	"routing/lockdown":                   {},
+	"core/log/level":                     {},
+	"filter/blockInbound":                {},
+	"filter/removeOutOfScopeDNS":         {},
+	"filter/removeBlockedDNS":            {},
+	"filter/domainHeuristics":            {},
+}
+
 func settingLine(opt *config.Option) (string, bool) {
 	if opt == nil || opt.Sensitive {
+		return "", false
+	}
+	if _, ok := reportSettingKeys[opt.Key]; !ok {
 		return "", false
 	}
 	switch opt.OptType {
