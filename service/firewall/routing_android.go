@@ -27,6 +27,12 @@ func routeActive() bool {
 	}
 }
 
+// spnDownGoesDirect reports whether a connection meant for the SPN goes out
+// directly while the SPN is not ready. Only with routing lockdown off.
+func spnDownGoesDirect() bool {
+	return !routing.Lockdown()
+}
+
 // bypassOwnConnection reports whether one of Portmaster's own connections must
 // skip tunneling.
 //
@@ -99,10 +105,16 @@ func checkAlternateRouting(ctx context.Context, conn *network.Connection) bool {
 		conn.Block("WireGuard config does not carry "+family, routing.CfgOptionTargetKey)
 
 	case wireguard.RouteBlock:
+		// With lockdown off the user chose to go direct while the tunnel is
+		// down, so the connection keeps its accept verdict.
+		if !routing.Lockdown() {
+			log.Tracer(ctx).Trace("firewall: wireguard tunnel is down, sending directly")
+			return true
+		}
 		// Fail closed. The tunnel is the route the user chose; letting the
 		// connection out directly while it is down would leak it.
 		log.Tracer(ctx).Trace("firewall: wireguard tunnel is not connected")
-		conn.Block("WireGuard tunnel is not connected", routing.CfgOptionTargetKey)
+		conn.Block("WireGuard tunnel is not connected", routing.CfgOptionLockdownKey)
 	}
 
 	return true

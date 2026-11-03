@@ -12,3 +12,6 @@ import (
 func awaitTunnelRequest(conn *network.Connection) error {
 	return sluice.AwaitRequest(conn, crew.HandleSluiceRequest)
 }
+
+// spnDownGoesDirect is false: desktop always blocks while the SPN is not ready.
+func spnDownGoesDirect() bool { return false }

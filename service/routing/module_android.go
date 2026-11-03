@@ -37,6 +37,7 @@ func (r *Routing) Manager() *mgr.Manager { return r.mgr }
 func (r *Routing) Start() error {
 	// Settle the stored target against spn/enable before anything reads it.
 	r.migrate()
+	r.migrateLockdown()
 	r.reconcile()
 
 	r.instance.Config().EventConfigChange.AddCallback(
@@ -68,6 +69,12 @@ func Current() Target {
 		return TargetDirect
 	}
 	return t
+}
+
+// Lockdown reports whether traffic for a routing target that is down is
+// blocked rather than sent out directly.
+func Lockdown() bool {
+	return config.Concurrent.GetAsBool(CfgOptionLockdownKey, true)()
 }
 
 // SetTarget stores the routing target.
@@ -124,6 +131,33 @@ func (r *Routing) migrate() {
 		return
 	}
 	log.Info("routing: migrated enabled SPN to the spn routing target")
+}
+
+// migrateLockdown moves the old lockdown switch to its own setting. The
+// routing screen used to store "lockdown off" as a global spn/use=false,
+// which sent all traffic direct even while the target was up. Here it
+// becomes lockdown=false with spn/use back to its default.
+func (r *Routing) migrateLockdown() {
+	lockdown, err := config.GetOption(CfgOptionLockdownKey)
+	if err != nil || lockdown.IsSetByUser() {
+		return
+	}
+	use, err := config.GetOption(cfgOptionUseSPNKey)
+	if err != nil || !use.IsSetByUser() {
+		return
+	}
+	if config.GetAsBool(cfgOptionUseSPNKey, true)() {
+		return
+	}
+	if err := config.SetConfigOption(CfgOptionLockdownKey, false); err != nil {
+		log.Warningf("routing: failed to migrate lockdown: %s", err)
+		return
+	}
+	if err := config.SetConfigOption(cfgOptionUseSPNKey, nil); err != nil {
+		log.Warningf("routing: failed to clear old global spn/use: %s", err)
+		return
+	}
+	log.Info("routing: moved the old lockdown switch to routing/lockdown")
 }
 
 type instance interface {

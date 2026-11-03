@@ -23,6 +23,9 @@ const (
 const (
 	// CfgOptionTargetKey is the routing target setting. Registered on Android only.
 	CfgOptionTargetKey = "routing/target"
+	// CfgOptionLockdownKey blocks traffic while the routing target is down
+	// instead of sending it out directly. Registered on Android only.
+	CfgOptionLockdownKey = "routing/lockdown"
 )
 
 // Targets lists every routing target in UI order.

@@ -110,6 +110,10 @@ func checkTunneling(ctx context.Context, conn *network.Connection) {
 
 	// Check if ready.
 	if !captain.ClientReady() {
+		// Android only; false elsewhere. See spnDownGoesDirect.
+		if spnDownGoesDirect() {
+			return
+		}
 		// Block connection as SPN is not ready yet.
 		log.Tracer(ctx).Trace("SPN not ready for tunneling")
 		conn.Failed("SPN not ready for tunneling", "")

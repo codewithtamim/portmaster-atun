@@ -24,6 +24,7 @@ var errBadRoutingAlgorithm = errors.New("routingAlgorithm must be single-hop, do
 type RoutingSnapshot struct {
 	Enable               bool   `json:"enable"`
 	UseSPN               bool   `json:"useSpn"`
+	Lockdown             bool   `json:"lockdown"`
 	RoutingAlgorithm     string `json:"routingAlgorithm"`
 	Status               string `json:"status"`
 	HomeHubID            string `json:"homeHubId"`
@@ -42,14 +43,18 @@ type RoutingSnapshot struct {
 type routingPutBody struct {
 	Enable           *bool   `json:"enable"`
 	UseSPN           *bool   `json:"useSpn"`
+	Lockdown         *bool   `json:"lockdown"`
 	RoutingAlgorithm *string `json:"routingAlgorithm"`
 }
+
+// cfgOptionLockdownKey mirrors routing.CfgOptionLockdownKey.
+const cfgOptionLockdownKey = "routing/lockdown"
 
 func registerRoutingAPIEndpoint() error {
 	crew.NoteRoute = rememberLiveRoute
 	return api.RegisterEndpoint(api.Endpoint{
 		Name:        "SPN routing",
-		Description: "GET SPN enable, lockdown, hops and runtime status. PUT enable, use, algorithm.",
+		Description: "GET SPN enable, lockdown, hops and runtime status. PUT enable, use, lockdown, algorithm.",
 		Path:        spnRoutingAPIPath,
 		Read:        api.PermitUser,
 		ReadMethod:  http.MethodGet,
@@ -76,6 +81,12 @@ func handleSPNRouting(ar *api.Request) (any, error) {
 		}
 		if body.UseSPN != nil {
 			err := config.SetConfigOption(profile.CfgOptionUseSPNKey, *body.UseSPN)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if body.Lockdown != nil {
+			err := config.SetConfigOption(cfgOptionLockdownKey, *body.Lockdown)
 			if err != nil {
 				return nil, err
 			}
@@ -108,6 +119,7 @@ func currentRoutingSnapshot() RoutingSnapshot {
 	snap := RoutingSnapshot{
 		Enable:           config.GetAsBool(CfgOptionEnableSPNKey, false)(),
 		UseSPN:           config.GetAsBool(profile.CfgOptionUseSPNKey, true)(),
+		Lockdown:         config.GetAsBool(cfgOptionLockdownKey, true)(),
 		RoutingAlgorithm: config.GetAsString(profile.CfgOptionRoutingAlgorithmKey, profile.DefaultRoutingProfileID)(),
 		Status:           string(st.Status),
 		HomeHubID:        st.HomeHubID,
