@@ -14,6 +14,7 @@ import (
 	"github.com/safing/portmaster/base/config"
 	"github.com/safing/portmaster/base/log"
 	"github.com/safing/portmaster/base/utils/debug"
+	"github.com/safing/portmaster/service/firewall/interception/atun"
 	"github.com/safing/portmaster/service/intel/filterlists"
 	"github.com/safing/portmaster/service/netenv"
 	"github.com/safing/portmaster/service/profile"
@@ -181,11 +182,23 @@ func addRedactedUnexpectedLogs(di *debug.Info) {
 	di.AddSection("Unexpected Logs", debug.UseCodeSection|debug.AddContentLineBreaks, redacted...)
 }
 
+// addProtectionSection reports whether the TUN is attached and intercepting,
+// and the online status the engine sees.
 func addProtectionSection(di *debug.Info) {
+	state := "off"
+	lines := []string{}
+	if atun.Running() {
+		state = "on"
+	}
+	lines = append(lines, fmt.Sprintf("tun: %s", state))
+	if cfg, ok := atun.CurrentTunConfig(); ok {
+		lines = append(lines, fmt.Sprintf("mtu: %d", cfg.MTU))
+	}
+	lines = append(lines, fmt.Sprintf("online: %s", netenv.GetOnlineStatus()))
 	di.AddSection(
-		fmt.Sprintf("Protection: %s", netenv.GetOnlineStatus()),
+		fmt.Sprintf("Protection: %s", state),
 		debug.UseCodeSection|debug.AddContentLineBreaks,
-		fmt.Sprintf("online: %s", netenv.GetOnlineStatus()),
+		lines...,
 	)
 }
 
