@@ -231,11 +231,8 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 	if UserAgent != "" {
 		req.Header.Set("User-Agent", UserAgent)
 	}
-	// Android only; always 0 elsewhere. See resumeOffset.
-	offset := d.resumeOffset(url)
-	if offset > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
-	}
+	// Android only; always 0 elsewhere. See resumeRequest.
+	offset := d.resumeRequest(req, url)
 
 	// Start request with shared http client.
 	resp, err := d.httpClient.Do(req)
@@ -243,6 +240,9 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 		return nil, fmt.Errorf("failed a get file request to: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if d.resumeRefused(resp, url, offset) {
+		return d.downloadData(ctx, url)
+	}
 
 	// Check for HTTP status errors.
 	if resp.StatusCode != http.StatusOK && (offset == 0 || resp.StatusCode != http.StatusPartialContent) {

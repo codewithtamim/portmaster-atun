@@ -14,8 +14,10 @@ func (u *Updater) beginProgress() {}
 
 func (u *Updater) endProgress(error) {}
 
-// resumeOffset is 0: desktop always downloads a file from the start.
-func (d *Downloader) resumeOffset(string) int64 { return 0 }
+// resumeRequest returns 0: desktop always downloads a file from the start.
+func (d *Downloader) resumeRequest(*http.Request, string) int64 { return 0 }
+
+func (d *Downloader) resumeRefused(*http.Response, string, int64) bool { return false }
 
 func (d *Downloader) readBody(resp *http.Response, _ string, _ int64) ([]byte, error) {
 	return io.ReadAll(resp.Body)

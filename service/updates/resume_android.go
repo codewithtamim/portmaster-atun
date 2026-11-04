@@ -32,18 +32,76 @@ func (d *Downloader) partialPath(url string) string {
 }
 
 // resumeOffset is the number of bytes of url already on disk from an
-// earlier attempt, or 0.
+// earlier attempt, or 0. A partial file without a saved validator is
+// dropped: without If-Range the server could append bytes of a newer
+// version of the file.
 func (d *Downloader) resumeOffset(url string) int64 {
 	path := d.partialPath(url)
 	info, err := os.Stat(path)
 	if err != nil {
 		return 0
 	}
-	if time.Since(info.ModTime()) > partialMaxAge {
-		_ = os.Remove(path)
+	if time.Since(info.ModTime()) > partialMaxAge || d.resumeValidator(url) == "" {
+		d.dropPartial(url)
 		return 0
 	}
 	return info.Size()
+}
+
+// resumeRequest asks for the rest of a partial download, if there is one,
+// and returns the offset it asked from. If-Range makes the server send the
+// whole file instead when it changed since the partial file was written.
+func (d *Downloader) resumeRequest(req *http.Request, url string) int64 {
+	offset := d.resumeOffset(url)
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+		req.Header.Set("If-Range", d.resumeValidator(url))
+	}
+	return offset
+}
+
+// resumeRefused drops the partial file and reports true when the server
+// refused the range, so the caller downloads the file again from the start.
+// This happens when the partial file already holds the whole file, for
+// example after the process was killed before the finished file was read.
+func (d *Downloader) resumeRefused(resp *http.Response, url string, offset int64) bool {
+	if offset == 0 || resp.StatusCode != http.StatusRequestedRangeNotSatisfiable {
+		return false
+	}
+	d.dropPartial(url)
+	return true
+}
+
+func (d *Downloader) validatorPath(url string) string {
+	return d.partialPath(url) + ".v"
+}
+
+// resumeValidator is the ETag or Last-Modified saved with a partial file.
+func (d *Downloader) resumeValidator(url string) string {
+	data, err := os.ReadFile(d.validatorPath(url))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// saveValidator keeps what If-Range needs to resume this response later. A
+// weak ETag cannot be used with If-Range, so Last-Modified is used then.
+func (d *Downloader) saveValidator(url string, resp *http.Response) {
+	validator := resp.Header.Get("ETag")
+	if validator == "" || strings.HasPrefix(validator, "W/") {
+		validator = resp.Header.Get("Last-Modified")
+	}
+	if validator == "" {
+		_ = os.Remove(d.validatorPath(url))
+		return
+	}
+	_ = os.WriteFile(d.validatorPath(url), []byte(validator), 0o600)
+}
+
+func (d *Downloader) dropPartial(url string) {
+	_ = os.Remove(d.partialPath(url))
+	_ = os.Remove(d.validatorPath(url))
 }
 
 // readBody streams a download into its partial file while counting bytes
@@ -62,7 +120,7 @@ func (d *Downloader) readBody(resp *http.Response, url string, offset int64) ([]
 	path := d.partialPath(url)
 	resumed := offset > 0 && resp.StatusCode == http.StatusPartialContent
 	if resumed && !contentRangeStartsAt(resp.Header.Get("Content-Range"), offset) {
-		_ = os.Remove(path)
+		d.dropPartial(url)
 		return nil, errWrongResumeOffset
 	}
 
@@ -76,6 +134,9 @@ func (d *Downloader) readBody(resp *http.Response, url string, offset int64) ([]
 	file, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open partial download: %w", err)
+	}
+	if !resumed {
+		d.saveValidator(url, resp)
 	}
 
 	if counting {
@@ -102,7 +163,7 @@ func (d *Downloader) readBody(resp *http.Response, url string, offset int64) ([]
 	}
 
 	data, err := os.ReadFile(path)
-	_ = os.Remove(path)
+	d.dropPartial(url)
 	if err != nil {
 		return nil, fmt.Errorf("read finished download: %w", err)
 	}
