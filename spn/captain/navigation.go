@@ -177,7 +177,7 @@ func connectToHomeHub(wCtx *mgr.WorkerCtx, dst *hub.Hub) error {
 	}
 
 	// Create communication terminal.
-	homeTerminal, initData, tErr := docks.NewLocalCraneTerminal(crane, nil, terminal.DefaultHomeHubTerminalOpts())
+	homeTerminal, initData, tErr := docks.NewLocalCraneTerminal(crane, nil, homeTerminalOpts())
 	if tErr != nil {
 		return tErr.Wrap("failed to create home terminal")
 	}
