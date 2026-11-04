@@ -205,10 +205,6 @@ func (pkt *packet) RerouteToTunnel() error {
 	return pkt.mark(MarkRerouteSPN)
 }
 
-func (pkt *packet) RerouteToWireGuard() error {
-	return pkt.Drop()
-}
-
 func (pkt *packet) RerouteToSplitTun() error {
 	return pkt.mark(MarkRerouteSplitTun)
 }

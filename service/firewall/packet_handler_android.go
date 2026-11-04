@@ -16,3 +16,18 @@ func acceptEmptyDNSPayload(pkt packet.Packet) bool {
 func packetHasLayers(pkt packet.Packet) bool {
 	return pkt.Layers() != nil
 }
+
+// wireGuardRerouter is a packet that can be handed to the WireGuard tunnel.
+// Only the Android TUN backend provides it.
+type wireGuardRerouter interface {
+	RerouteToWireGuard() error
+}
+
+// rerouteToWireGuard hands the packet to the WireGuard tunnel, or drops it
+// when the backend has no WireGuard target.
+func rerouteToWireGuard(pkt packet.Packet) error {
+	if r, ok := pkt.(wireGuardRerouter); ok {
+		return r.RerouteToWireGuard()
+	}
+	return pkt.Drop()
+}

@@ -907,7 +907,7 @@ func issueVerdict(conn *network.Connection, pkt packet.Packet, verdict network.V
 	case network.VerdictRerouteToTunnel:
 		err = pkt.RerouteToTunnel()
 	case network.VerdictRerouteToWireGuard:
-		err = pkt.RerouteToWireGuard()
+		err = rerouteToWireGuard(pkt)
 	case network.VerdictRerouteToSplitTun:
 		err = pkt.RerouteToSplitTun()
 	case network.VerdictFailed:

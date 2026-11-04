@@ -13,3 +13,8 @@ func acceptEmptyDNSPayload(packet.Packet) bool {
 func packetHasLayers(packet.Packet) bool {
 	return true
 }
+
+// rerouteToWireGuard drops the packet: there is no WireGuard target here.
+func rerouteToWireGuard(pkt packet.Packet) error {
+	return pkt.Drop()
+}
