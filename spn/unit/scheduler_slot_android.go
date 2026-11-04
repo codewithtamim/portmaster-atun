@@ -11,7 +11,13 @@ import (
 // idleParkAfter is how long to wait with no new units before stopping the slot
 // ticker. A phone spends most of its time with nothing to schedule, and a
 // ticker that keeps firing there costs wakeups and battery for no work.
-const idleParkAfter = time.Second
+//
+// The ticker fires every half slot (5 ms, 200 times a second). With the screen
+// off the SPN still sees a trickle of units (gossip, keepalives, route
+// attempts), and a full second of ticking per unit kept it running nearly all
+// the time: about 28% of a core while idle. Parking is only allowed once no
+// unit is waiting for clearance (see shouldPark), so a short window is safe.
+const idleParkAfter = 100 * time.Millisecond
 
 // initSlotWait sets up parking state. Called once from NewScheduler, so
 // every later reader sees a fully built idlePark without synchronising.
@@ -38,6 +44,10 @@ func wakeSlotWait(s *Scheduler) {
 
 func shouldPark(s *Scheduler, st *idlePark) bool {
 	if s.stopping.IsSet() {
+		return false
+	}
+	// A unit still waiting in WaitForSlot needs the slots to advance.
+	if s.clearanceUpTo.Load() < s.currentUnitID.Load() {
 		return false
 	}
 	last := st.lastUnit.Load()
