@@ -13,7 +13,7 @@ var (
 	// ErrBadProfile is returned when a profile fails validation.
 	ErrBadProfile = errors.New("wireguard: invalid profile")
 	// ErrSplitTunnel is returned, wrapped in ErrBadProfile, for a profile
-	// that routes only some addresses. Split tunneling is not in v0.1.
+	// that routes only some addresses. Split tunneling is not supported.
 	ErrSplitTunnel = errors.New("config routes only some addresses; split tunneling is not supported")
 	// ErrUnsupported is returned on platforms without a WireGuard device.
 	ErrUnsupported = errors.New("wireguard: not supported on this platform")

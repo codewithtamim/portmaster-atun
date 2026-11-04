@@ -47,8 +47,7 @@ func registerAPIEndpoints() error {
 		return err
 	}
 
-	err := registerCaptivePortalAPI()
-	if err != nil {
+	if err := registerCaptivePortalAPI(); err != nil {
 		return err
 	}
 

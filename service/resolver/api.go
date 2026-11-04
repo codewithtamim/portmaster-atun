@@ -28,8 +28,7 @@ func registerAPI() error {
 		return err
 	}
 
-	err := registerDNSSettingsAPI()
-	if err != nil {
+	if err := registerDNSSettingsAPI(); err != nil {
 		return err
 	}
 
