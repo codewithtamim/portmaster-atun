@@ -66,27 +66,6 @@ func loadCacheVersionRecord() (*cacheVersionRecord, error) {
 	return verRecord, nil
 }
 
-// CacheVersion returns the applied filter-list version and last-updated unix
-// time. Empty version and zero time mean the cache is not ready yet.
-func CacheVersion() (version string, lastUpdatedUnix int64) {
-	lastUpdatedUnix = getCacheLastUpdatedUnix()
-	ver, err := getCacheDatabaseVersion()
-	if err == nil {
-		version = ver.String()
-	}
-	return
-}
-
-// getCacheLastUpdatedUnix returns when filter lists were last applied.
-// Zero means the cache has no timestamp yet.
-func getCacheLastUpdatedUnix() int64 {
-	verRecord, err := loadCacheVersionRecord()
-	if err != nil {
-		return 0
-	}
-	return verRecord.LastUpdatedUnix
-}
-
 // setCacheDatabaseVersion updates the cache database
 // version record to ver.
 func setCacheDatabaseVersion(ver string) error {

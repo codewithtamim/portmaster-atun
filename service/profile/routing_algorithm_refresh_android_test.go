@@ -34,13 +34,13 @@ func TestRoutingAlgorithmChangeRefreshesLayeredProfile(t *testing.T) {
 	if got := lp.SPNRoutingAlgorithm(); got != "double-hop" {
 		t.Fatalf("cached algorithm: %s", got)
 	}
-	refreshLayeredProfilesForRoutingAlgorithm("triple-hop")
+	applyRoutingAlgorithm("triple-hop")
 	if got := lp.SPNRoutingAlgorithm(); got != "triple-hop" {
 		t.Fatalf("after triple-hop: %s", got)
 	}
 
 	algo = "single-hop"
-	refreshLayeredProfilesForRoutingAlgorithm("single-hop")
+	applyRoutingAlgorithm("single-hop")
 	if got := lp.SPNRoutingAlgorithm(); got != "single-hop" {
 		t.Fatalf("after single-hop: %s", got)
 	}

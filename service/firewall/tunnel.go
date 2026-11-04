@@ -43,7 +43,7 @@ func checkTunneling(ctx context.Context, conn *network.Connection) {
 	}
 
 	// A non-SPN routing target decides here, before SPN hop policy. Platforms
-	// where the SPN is the only target always report false; see routing_stub.go.
+	// where the SPN is the only target always report false; see routing_default.go.
 	if checkAlternateRouting(ctx, conn) {
 		return
 	}

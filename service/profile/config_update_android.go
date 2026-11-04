@@ -19,7 +19,13 @@ var (
 // refreshLayeredProfilesForRoutingAlgorithm bumps the revision of every active
 // layered profile when the global hop profile changes, so the next
 // SPNRoutingAlgorithm call re-reads it.
-func refreshLayeredProfilesForRoutingAlgorithm(next string) {
+func refreshLayeredProfilesForRoutingAlgorithm() {
+	applyRoutingAlgorithm(cfgOptionRoutingAlgorithm())
+}
+
+// applyRoutingAlgorithm refreshes the active layered profiles if next differs
+// from the hop profile they last saw.
+func applyRoutingAlgorithm(next string) {
 	lastRoutingAlgorithmMu.Lock()
 	if next == lastRoutingAlgorithm {
 		lastRoutingAlgorithmMu.Unlock()

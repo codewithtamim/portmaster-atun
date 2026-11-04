@@ -29,7 +29,7 @@ func (p *Process) getSpecialProfileID() (specialProfileID string) {
 		}
 		// Check if this is the system resolver.
 		switch runtime.GOOS {
-		case "windows": //nolint:goconst // same GOOS literal as the rest of this package
+		case "windows":
 			// Depending on the OS version System32 may be capitalized or not.
 			if (p.Path == `C:\Windows\System32\svchost.exe` ||
 				p.Path == `C:\Windows\system32\svchost.exe`) &&

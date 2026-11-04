@@ -3,4 +3,4 @@
 package profile
 
 // refreshLayeredProfilesForRoutingAlgorithm does nothing on desktop.
-func refreshLayeredProfilesForRoutingAlgorithm(string) {}
+func refreshLayeredProfilesForRoutingAlgorithm() {}

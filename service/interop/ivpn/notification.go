@@ -79,13 +79,13 @@ var db = database.NewInterface(&database.Options{Local: true, Internal: true})
 
 // isNotificationSuppressed returns true if the user has chosen to never see the IVPN compat notification.
 func isNotificationSuppressed() bool {
-	_, err := db.Get(NotificationDBIDIvpnDetectSuppressed)
+	_, err := db.Get(Notification_DB_ID_IvpnDetectSuppressed)
 	return err == nil
 }
 
 // suppressNotification persists the user's decision to never show the notification again.
 func suppressNotification() error {
 	m := &markerRecord{}
-	m.SetKey(NotificationDBIDIvpnDetectSuppressed)
+	m.SetKey(Notification_DB_ID_IvpnDetectSuppressed)
 	return db.Put(m)
 }

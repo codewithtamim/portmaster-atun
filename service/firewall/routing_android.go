@@ -20,8 +20,6 @@ func routeActive() bool {
 		return tunnelEnabled()
 	case routing.TargetWireGuard:
 		return true
-	case routing.TargetDirect:
-		return false
 	default:
 		return false
 	}

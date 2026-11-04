@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/safing/portmaster/base/notifications"
 	"github.com/safing/portmaster/base/utils/anotif"
 	"github.com/safing/portmaster/service/mgr"
 	"github.com/safing/portmaster/service/process"
@@ -33,6 +34,28 @@ var (
 	secureDNSClearMu sync.Mutex
 	secureDNSClear   = map[string]*time.Timer{}
 )
+
+// shownByPlatform reports whether notify has nothing left to do: Android
+// delivers through anotif and never uses the notifications module. The
+// secure-DNS warnings are shown at once, without the incident threshold.
+func shownByPlatform(issue *appIssue, proc *process.Process, eventID string) bool {
+	if !anotif.Handles() {
+		return false
+	}
+	if deliverSecureDNSImmediately(issue, proc, eventID) {
+		return true
+	}
+	return anotif.AlreadyDelivered(eventID)
+}
+
+// showNotification shows the warning through anotif when it handles them.
+func showNotification(n *notifications.Notification) {
+	if anotif.Handles() {
+		anotif.Deliver(n.EventID, n.Title, n.Message)
+		return
+	}
+	notifications.Notify(n)
+}
 
 // deliverSecureDNSImmediately shows the secure-DNS warning that matches what
 // the firewall did: the lookups either skip filtering or were blocked.

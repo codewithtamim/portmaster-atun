@@ -110,12 +110,12 @@ func authenticateAPIRequest(ctx context.Context, pktInfo *packet.Info) (retry bo
 	// Get authenticated path.
 	authenticatedPath := module.instance.BinaryUpdates().GetMainDir()
 	if authenticatedPath == "" {
-		return false, fmt.Errorf(deniedMsgMisconfigured, api.ErrAPIAccessDeniedMessage) //nolint:staticcheck // user-facing message includes punctuation
+		return false, fmt.Errorf(deniedMsgMisconfigured, api.ErrAPIAccessDeniedMessage) //nolint:stylecheck // message for user
 	}
 	// Get real path.
 	authenticatedPath, err = filepath.EvalSymlinks(authenticatedPath)
 	if err != nil {
-		return false, fmt.Errorf(deniedMsgUnidentified, api.ErrAPIAccessDeniedMessage) //nolint:staticcheck // user-facing message includes punctuation
+		return false, fmt.Errorf(deniedMsgUnidentified, api.ErrAPIAccessDeniedMessage) //nolint:stylecheck // message for user
 	}
 	// Add filepath separator to confine to directory.
 	authenticatedPath += string(filepath.Separator)
@@ -123,7 +123,7 @@ func authenticateAPIRequest(ctx context.Context, pktInfo *packet.Info) (retry bo
 	// Get process of request.
 	pid, _, _ := process.GetPidOfConnection(ctx, pktInfo)
 	if pid < 0 {
-		return false, fmt.Errorf(deniedMsgUnidentified, api.ErrAPIAccessDeniedMessage) //nolint:staticcheck // user-facing message includes punctuation
+		return false, fmt.Errorf(deniedMsgUnidentified, api.ErrAPIAccessDeniedMessage) //nolint:stylecheck // message for user
 	}
 	proc, err := process.GetOrFindProcess(ctx, pid)
 	if err != nil {
@@ -143,8 +143,7 @@ func authenticateAPIRequest(ctx context.Context, pktInfo *packet.Info) (retry bo
 				break checkLevelsLoop
 			default: // normal process
 				// Check if the requesting process is in database root / updates dir.
-				realPath, err := filepath.EvalSymlinks(proc.Path)
-				if err == nil {
+				if realPath, err := filepath.EvalSymlinks(proc.Path); err == nil {
 
 					// check if the client has been allowed by flag
 					if slices.Contains(allowedClients, realPath) {
@@ -184,15 +183,15 @@ func authenticateAPIRequest(ctx context.Context, pktInfo *packet.Info) (retry bo
 	switch originalPid {
 	case process.UnidentifiedProcessID:
 		log.Tracer(ctx).Warningf("filter: denying api access: failed to identify process")
-		return true, fmt.Errorf(deniedMsgUnidentified, api.ErrAPIAccessDeniedMessage) //nolint:staticcheck // user-facing message includes punctuation
+		return true, fmt.Errorf(deniedMsgUnidentified, api.ErrAPIAccessDeniedMessage) //nolint:stylecheck // message for user
 
 	case process.SystemProcessID:
 		log.Tracer(ctx).Warningf("filter: denying api access: request by system")
-		return false, fmt.Errorf(deniedMsgSystem, api.ErrAPIAccessDeniedMessage) //nolint:staticcheck // user-facing message includes punctuation
+		return false, fmt.Errorf(deniedMsgSystem, api.ErrAPIAccessDeniedMessage) //nolint:stylecheck // message for user
 
 	default: // normal process
 		log.Tracer(ctx).Warningf("filter: denying api access to %s - also checked %s (trusted root is %s)", procsChecked[0], strings.Join(procsChecked[1:], " "), module.instance.BinDir())
-		return false, fmt.Errorf( //nolint:staticcheck // user-facing message includes punctuation
+		return false, fmt.Errorf( //nolint:stylecheck // message for user
 			deniedMsgUnauthorized,
 			api.ErrAPIAccessDeniedMessage,
 			strings.Join(procsChecked, "\n"),
