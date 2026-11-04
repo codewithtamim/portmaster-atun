@@ -228,6 +228,7 @@ func (nq *NetQuery) Start() error {
 					log.Errorf("netquery: failed to removed old connections from live db: %s", err)
 				} else {
 					log.Tracef("netquery: successfully removed %d old connections from live db that ended before %s", count, threshold)
+					compactLiveDB(ctx.Ctx(), nq.Store)
 				}
 			}
 		}
