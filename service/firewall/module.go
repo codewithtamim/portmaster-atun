@@ -116,6 +116,7 @@ func prep() error {
 func start() error {
 	getConfig()
 	startAPIAuth()
+	startDeviceStateWatch()
 
 	module.mgr.Go("packet handler", packetHandler)
 	module.mgr.Go("bandwidth update handler", bandwidthUpdateHandler)
@@ -129,6 +130,7 @@ func start() error {
 }
 
 func stop() error {
+	stopDeviceStateWatch()
 	return nil
 }
 

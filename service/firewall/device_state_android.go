@@ -4,11 +4,12 @@ package firewall
 
 import "github.com/safing/portmaster/base/utils/aconn"
 
-func init() {
-	aconn.SetOnDeviceStateChange(func() {
-		if module == nil {
-			return
-		}
-		resetAllConnectionVerdicts()
-	})
+// startDeviceStateWatch re-evaluates open connections when the device state
+// that device policies depend on changes.
+func startDeviceStateWatch() {
+	aconn.SetOnDeviceStateChange(resetAllConnectionVerdicts)
+}
+
+func stopDeviceStateWatch() {
+	aconn.SetOnDeviceStateChange(nil)
 }
