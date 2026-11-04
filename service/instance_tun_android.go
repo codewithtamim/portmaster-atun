@@ -50,6 +50,12 @@ func (i *Instance) StopTun() error {
 	tunLock.Lock()
 	defer tunLock.Unlock()
 
+	return i.stopTunLocked()
+}
+
+// stopTunLocked does the work of StopTun. The caller holds tunLock. The TUN
+// config is cleared so a later start cannot dup a recycled fd number.
+func (i *Instance) stopTunLocked() error {
 	access.SetTunnelUp(false)
 	err := i.serviceGroupInterception.Stop()
 	atun.ClearTunConfig()
