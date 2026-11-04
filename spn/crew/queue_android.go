@@ -6,8 +6,11 @@ package crew
 // readBufSize (1500) bytes, that a connection asks the SPN for.
 //
 // The terminal default of 50000 preallocates two pointer channels of 50000
-// slots for every connection, about 800 KB each. On a phone that adds up to
-// hundreds of MB during normal browsing, and the GC scans all of it on every
-// cycle. 4096 messages is a window of about 6 MB, enough for more than
-// 100 Mbit/s at a 300 ms multi-hop round trip, at 64 KB per connection.
-const connectQueueSize = 4096
+// slots for every connection, about 800 KB each, which on a phone added up to
+// hundreds of MB that the GC scans on every cycle. The window is also how much
+// data can queue in front of everything else on the link: with 4096 messages
+// (6 MB) per connection, heavy browsing queued over 15 s of data, so DNS
+// lookups over the SPN timed out and the home hub ping failed. 1024 messages
+// (1.5 MB) still allows about 60 Mbit/s per connection at a 200 ms multi-hop
+// round trip.
+const connectQueueSize = 1024
