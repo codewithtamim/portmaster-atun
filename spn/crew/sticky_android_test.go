@@ -10,7 +10,7 @@ import (
 
 func TestStickyRouteFitsRequestedProfile(t *testing.T) {
 	homeUpgraded := &stickyHub{
-		RequestedProfile: navigator.RoutingProfileHomeID,
+		Profile: navigator.RoutingProfileHomeID,
 		Route: &navigator.Route{
 			Algorithm: navigator.RoutingProfileSingleHopID,
 			Path:      []*navigator.Hop{{}, {}},
@@ -24,7 +24,7 @@ func TestStickyRouteFitsRequestedProfile(t *testing.T) {
 	}
 
 	double := &stickyHub{
-		RequestedProfile: navigator.RoutingProfileDoubleHopID,
+		Profile: navigator.RoutingProfileDoubleHopID,
 		Route: &navigator.Route{
 			Algorithm: navigator.RoutingProfileDoubleHopID,
 			Path:      []*navigator.Hop{{}, {}},
@@ -36,7 +36,22 @@ func TestStickyRouteFitsRequestedProfile(t *testing.T) {
 	if stickyRouteFits(double, navigator.RoutingProfileSingleHopID) {
 		t.Fatal("a double-hop route must not be reused after fewer hops is selected")
 	}
-	if stickyRouteFits(&stickyHub{RequestedProfile: navigator.RoutingProfileHomeID}, navigator.RoutingProfileHomeID) {
+	if stickyRouteFits(&stickyHub{Profile: navigator.RoutingProfileHomeID}, navigator.RoutingProfileHomeID) {
 		t.Fatal("a stickied hub with no route must not be reused")
+	}
+}
+
+func TestClearStickyHubsDropsRememberedRoutes(t *testing.T) {
+	stickyLock.Lock()
+	stickyIPs["test"] = &stickyHub{}
+	stickyDomains["test"] = &stickyHub{}
+	stickyLock.Unlock()
+
+	ClearStickyHubs()
+
+	stickyLock.Lock()
+	defer stickyLock.Unlock()
+	if len(stickyIPs) != 0 || len(stickyDomains) != 0 {
+		t.Fatal("sticky routes were kept after a hop change")
 	}
 }

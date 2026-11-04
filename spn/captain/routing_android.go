@@ -11,6 +11,7 @@ import (
 	"github.com/safing/portmaster/base/api"
 	"github.com/safing/portmaster/base/config"
 	"github.com/safing/portmaster/service/profile"
+	"github.com/safing/portmaster/service/routing"
 	"github.com/safing/portmaster/spn/crew"
 	"github.com/safing/portmaster/spn/navigator"
 )
@@ -46,9 +47,6 @@ type routingPutBody struct {
 	Lockdown         *bool   `json:"lockdown"`
 	RoutingAlgorithm *string `json:"routingAlgorithm"`
 }
-
-// cfgOptionLockdownKey mirrors routing.CfgOptionLockdownKey.
-const cfgOptionLockdownKey = "routing/lockdown"
 
 func registerRoutingAPIEndpoint() error {
 	crew.NoteRoute = rememberLiveRoute
@@ -86,7 +84,7 @@ func handleSPNRouting(ar *api.Request) (any, error) {
 			}
 		}
 		if body.Lockdown != nil {
-			err := config.SetConfigOption(cfgOptionLockdownKey, *body.Lockdown)
+			err := config.SetConfigOption(routing.CfgOptionLockdownKey, *body.Lockdown)
 			if err != nil {
 				return nil, err
 			}
@@ -119,7 +117,7 @@ func currentRoutingSnapshot() RoutingSnapshot {
 	snap := RoutingSnapshot{
 		Enable:           config.GetAsBool(CfgOptionEnableSPNKey, false)(),
 		UseSPN:           config.GetAsBool(profile.CfgOptionUseSPNKey, true)(),
-		Lockdown:         config.GetAsBool(cfgOptionLockdownKey, true)(),
+		Lockdown:         config.GetAsBool(routing.CfgOptionLockdownKey, true)(),
 		RoutingAlgorithm: config.GetAsString(profile.CfgOptionRoutingAlgorithmKey, profile.DefaultRoutingProfileID)(),
 		Status:           string(st.Status),
 		HomeHubID:        st.HomeHubID,

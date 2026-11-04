@@ -27,9 +27,7 @@ type stickyHub struct {
 	Route    *navigator.Route
 	LastSeen time.Time
 	Avoid    bool
-	// RequestedProfile is the hop profile selected when this route was built,
-	// captured before route finding rewrites it. Only Android reads it.
-	RequestedProfile string
+	Profile  hopProfile
 }
 
 func (sh *stickyHub) isExpired() bool {
@@ -120,10 +118,10 @@ func (t *Tunnel) stickDestinationToHub() {
 	// Stick to IP.
 	ipKey := makeStickyIPKey(t.connInfo)
 	stickyIPs[ipKey] = &stickyHub{
-		Pin:              t.dstPin,
-		Route:            t.route,
-		LastSeen:         time.Now(),
-		RequestedProfile: t.requestedProfile,
+		Pin:      t.dstPin,
+		Route:    t.route,
+		LastSeen: time.Now(),
+		Profile:  t.requestedProfile,
 	}
 	log.Infof("spn/crew: sticking %s to %s", ipKey, t.dstPin.Hub)
 
@@ -131,10 +129,10 @@ func (t *Tunnel) stickDestinationToHub() {
 	if t.connInfo.Entity.Domain != "" {
 		domainKey := makeStickyDomainKey(t.connInfo)
 		stickyDomains[domainKey] = &stickyHub{
-			Pin:              t.dstPin,
-			Route:            t.route,
-			LastSeen:         time.Now(),
-			RequestedProfile: t.requestedProfile,
+			Pin:      t.dstPin,
+			Route:    t.route,
+			LastSeen: time.Now(),
+			Profile:  t.requestedProfile,
 		}
 		log.Infof("spn/crew: sticking %s to %s", domainKey, t.dstPin.Hub)
 	}
@@ -180,36 +178,4 @@ func clearStickyHubs() {
 			delete(stickyRegistry, key)
 		}
 	}
-}
-
-// ClearStickyHubs drops remembered routes. A stickied route is reused for an
-// hour without asking the route finder, so a hop change would otherwise keep
-// sending new connections down the old path.
-func ClearStickyHubs() {
-	clearStickyHubs()
-}
-
-// NoteRoute, if set, receives every route crew establishes: the real hop
-// count and the exit hub's country. Android's routing status sets it; it stays
-// nil on desktop.
-var NoteRoute func(hops int, exitCountry string)
-
-func publishEstablishedRoute(route *navigator.Route, pin *navigator.Pin) {
-	if NoteRoute == nil || route == nil {
-		return
-	}
-	NoteRoute(len(route.Path), pinCountryName(pin))
-}
-
-func pinCountryName(pin *navigator.Pin) string {
-	if pin == nil {
-		return ""
-	}
-	if pin.LocationV4 != nil && pin.LocationV4.Country.Name != "" {
-		return pin.LocationV4.Country.Name
-	}
-	if pin.LocationV6 != nil {
-		return pin.LocationV6.Country.Name
-	}
-	return ""
 }

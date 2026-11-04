@@ -51,9 +51,9 @@ type Tunnel struct {
 	route       *navigator.Route
 	failedTries int
 	stickied    bool
-	// requestedProfile is the hop profile selected for this connection,
-	// captured before route finding rewrites TunnelOpts.
-	requestedProfile string
+	// requestedProfile is the hop profile selected for this connection.
+	// Empty on desktop.
+	requestedProfile hopProfile
 }
 
 func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
@@ -127,19 +127,8 @@ func (t *Tunnel) connectWorker(wc *mgr.WorkerCtx) (err error) {
 func (t *Tunnel) establish(ctx context.Context) (err error) {
 	var routes *navigator.Routes
 
-	// Capture the selected hop profile before FindRoutes rewrites it. A home
-	// hub without the destination IP family is upgraded to single-hop in place.
-	if t.connInfo.TunnelOpts != nil {
-		t.requestedProfile = t.connInfo.TunnelOpts.RoutingProfile
-	}
 	// Check if the destination sticks to a Hub.
-	sticksTo := getStickiedHub(t.connInfo)
-	// Android drops a remembered route built for a different hop profile.
-	// Desktop stickyRouteFits always accepts it.
-	if sticksTo != nil && !sticksTo.Avoid && !stickyRouteFits(sticksTo, t.requestedProfile) {
-		log.Tracer(ctx).Tracef("spn/crew: stickied route does not match %s", t.requestedProfile)
-		sticksTo = nil
-	}
+	sticksTo := fitStickiedHub(ctx, t, getStickiedHub(t.connInfo))
 	switch {
 	case sticksTo == nil:
 		// Continue.
