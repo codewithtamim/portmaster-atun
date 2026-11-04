@@ -38,12 +38,14 @@ var (
 // to match. The spn/enable setting is left alone: it is the user's routing
 // choice and comes back into effect when protection is turned on again.
 func SetTunnelUp(up bool) {
+	// Swap under the lock, so overlapping calls apply in the order they set
+	// the state and the grace timer always matches the last one.
+	stopTimerLock.Lock()
+	defer stopTimerLock.Unlock()
 	if tunnelUp.Swap(up) == up {
 		return
 	}
 
-	stopTimerLock.Lock()
-	defer stopTimerLock.Unlock()
 	if stopTimer != nil {
 		stopTimer.Stop()
 		stopTimer = nil
