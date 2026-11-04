@@ -159,6 +159,13 @@ func (tr *TCPResolver) getOrCreateResolverConn(ctx context.Context) (*tcpResolve
 	default:
 	}
 
+	// Android: one query dials at a time, the others use its connection.
+	newConn, unlockDial, err := tr.lockDial(ctx, seenInstanceID)
+	if err != nil || newConn != nil {
+		return newConn, err
+	}
+	defer unlockDial()
+
 	// Create a new if no active one is available.
 	conn, err := tr.dial(ctx)
 	if err != nil {
