@@ -3,6 +3,7 @@
 package unit
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/safing/portmaster/service/mgr"
@@ -19,10 +20,18 @@ import (
 // unit is waiting for clearance (see shouldPark), so a short window is safe.
 const idleParkAfter = 100 * time.Millisecond
 
+// slotWaitState is the per-scheduler state of the parking slot ticker.
+type slotWaitState struct {
+	wake     chan struct{}
+	lastUnit atomic.Int64
+	started  atomic.Int64
+	parked   atomic.Bool
+}
+
 // initSlotWait sets up parking state. Called once from NewScheduler, so
-// every later reader sees a fully built idlePark without synchronising.
+// every later reader sees the wake channel without synchronising.
 func initSlotWait(s *Scheduler) {
-	s.idle = &idlePark{wake: make(chan struct{}, 1)}
+	s.idle.wake = make(chan struct{}, 1)
 	s.idle.started.Store(time.Now().UnixNano())
 }
 
@@ -42,7 +51,7 @@ func wakeSlotWait(s *Scheduler) {
 	}
 }
 
-func shouldPark(s *Scheduler, st *idlePark) bool {
+func shouldPark(s *Scheduler, st *slotWaitState) bool {
 	if s.stopping.IsSet() {
 		return false
 	}
@@ -60,8 +69,15 @@ func shouldPark(s *Scheduler, st *idlePark) bool {
 
 // waitSlot blocks until the next half-slot is due, stopping the ticker
 // entirely while there is nothing to schedule.
-func waitSlot(s *Scheduler, ticker *time.Ticker, ctx *mgr.WorkerCtx) bool {
-	st := s.idle
+//
+// After a park, slotStartedAt is moved to the wake-up time, so the first slot
+// does not count the parked time as its own duration. Counting it would skew
+// the slot stats and drop the pace to its minimum after every park.
+//
+// When the worker is cancelled while parked, it returns true without waiting
+// for the ticker, so the scheduler loop sees the cancellation and ends cleanly.
+func waitSlot(s *Scheduler, ticker *time.Ticker, ctx *mgr.WorkerCtx, slotStartedAt *time.Time) bool {
+	st := &s.idle
 
 	// Re-check after claiming the park: a unit may have arrived in between,
 	// and parking then would sleep through it.
@@ -71,8 +87,9 @@ func waitSlot(s *Scheduler, ticker *time.Ticker, ctx *mgr.WorkerCtx) bool {
 			select {
 			case <-st.wake:
 				ticker.Reset(s.config.SlotDuration / 2)
+				*slotStartedAt = time.Now()
 			case <-ctx.Done():
-				return false
+				return true
 			}
 		} else {
 			st.parked.Store(false)

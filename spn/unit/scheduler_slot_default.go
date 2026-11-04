@@ -8,10 +8,13 @@ import (
 	"github.com/safing/portmaster/service/mgr"
 )
 
+// slotWaitState is empty here, as waitSlot never parks.
+type slotWaitState struct{}
+
 // waitSlot blocks until the next half-slot is due.
 // The ticker runs for as long as the scheduler does, so this only returns
 // false if the ticker channel is closed, which it never is.
-func waitSlot(_ *Scheduler, ticker *time.Ticker, _ *mgr.WorkerCtx) bool {
+func waitSlot(_ *Scheduler, ticker *time.Ticker, _ *mgr.WorkerCtx, _ *time.Time) bool {
 	_, ok := <-ticker.C
 
 	return ok
