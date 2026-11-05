@@ -68,6 +68,8 @@ func performUpdate(ctx context.Context) error {
 		return nil
 	}
 	defer updateInProgress.UnSet()
+	// Android reports byte progress for the cache import; no-ops elsewhere.
+	defer endCacheLoad()
 
 	// First, update the list index.
 	err := updateListIndex()
@@ -86,9 +88,7 @@ func performUpdate(ctx context.Context) error {
 		return nil
 	}
 
-	// Android reports byte progress for the cache import; no-ops elsewhere.
 	beginCacheLoad(upgradables)
-	defer endCacheLoad()
 
 	cleanupRequired := false
 	filterToUpdate := defaultFilter

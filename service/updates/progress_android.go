@@ -42,6 +42,10 @@ type progressTracker struct {
 	filterListsLastUpdatedCheck atomic.Value // func() int64
 	forcePending                atomic.Bool  // a user's update request is in progress
 	attemptsFinished            atomic.Int64
+	// listChecksFinished counts ended filter-list update passes, and
+	// listChecksAtBegin is its value when the current attempt began.
+	listChecksFinished atomic.Int64
+	listChecksAtBegin  atomic.Int64
 }
 
 // Progress is byte-level intel download status for HTTP clients.
@@ -114,6 +118,7 @@ func (u *Updater) beginProgress() {
 		u.totalBytes.Store(0)
 	}
 	u.requiredBytes.Store(0)
+	u.listChecksAtBegin.Store(u.listChecksFinished.Load())
 	u.progressState.Store(ProgressChecking)
 }
 
@@ -174,11 +179,7 @@ func (u *Updater) endProgress(err error) {
 
 	switch {
 	case err == nil:
-		if u.cacheActive.Load() {
-			u.setProgressState(ProgressRebuilding)
-		} else {
-			u.setProgressState(ProgressReady)
-		}
+		u.endAppliedUpdate()
 	case errors.Is(err, ErrSameIndex), errors.Is(err, ErrNoUpdateAvailable), errors.Is(err, ErrActionRequired):
 		if u.cacheActive.Load() {
 			u.setProgressState(ProgressRebuilding)
@@ -190,6 +191,25 @@ func (u *Updater) endProgress(err error) {
 		u.setProgressState(ProgressStorage)
 	default:
 		u.setProgressState(ProgressFailed)
+	}
+}
+
+// endAppliedUpdate reports an attempt that installed new files. The filter-list
+// module picks them up in its own worker, which may not have begun yet. The
+// state stays on rebuilding for that gap: ready would read as finished while
+// the installed lists are still the old ones.
+//
+// The state is set before the counter is read, and EndFilterListCache moves the
+// counter before it reads the state, so a pass ending at the same moment cannot
+// leave rebuilding behind.
+func (u *Updater) endAppliedUpdate() {
+	if !u.holdsIntelForApproval() {
+		u.setProgressState(ProgressReady)
+		return
+	}
+	u.setProgressState(ProgressRebuilding)
+	if !u.cacheActive.Load() && u.listChecksFinished.Load() != u.listChecksAtBegin.Load() {
+		u.setProgressState(ProgressReady)
 	}
 }
 

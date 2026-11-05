@@ -79,9 +79,11 @@ func (u *Updater) NoteFilterListCache(loaded int64) {
 	u.cacheLoadedBytes.Store(loaded)
 }
 
-// EndFilterListCache clears the import once the cache write has finished.
+// EndFilterListCache ends a filter-list update pass, also one that found
+// nothing to import, and clears the import once the cache write has finished.
 func (u *Updater) EndFilterListCache() {
 	u.cacheActive.Store(false)
+	u.listChecksFinished.Add(1)
 	state, _ := u.progressState.Load().(string)
 	if state == ProgressRebuilding {
 		u.setProgressState(ProgressIdle)
