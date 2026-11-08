@@ -115,6 +115,8 @@ reconnect:
 			log.Info("spn/captain: client not ready")
 		}
 		resetSPNStatus(StatusConnecting, true)
+		// This connect uses the current uplink, so an earlier move is handled.
+		ackUplinkChanged()
 
 		// Check everything and connect to the SPN.
 		for _, clientFunc := range []clientComponentFunc{
@@ -187,6 +189,11 @@ reconnect:
 			case <-crew.ConnectErrors():
 			case <-clientNetworkChangedFlag.Signal():
 				clientNetworkChangedFlag.Refresh()
+			case <-uplinkChanged():
+				// Android only. See uplink_android.go.
+				ackUplinkChanged()
+				log.Info("spn/captain: uplink network changed, reconnecting to the home hub")
+				continue reconnect
 			case <-ctx.Done():
 				return nil
 			}

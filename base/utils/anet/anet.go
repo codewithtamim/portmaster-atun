@@ -64,6 +64,8 @@ type NetworkInterface struct {
 	Loopback  bool             `json:"loopback"`
 	P2P       bool             `json:"p2p"`
 	Addresses []NetworkAddress `json:"addresses"`
+	// Uplink marks the network Android sends traffic on (our VPN aside).
+	Uplink bool `json:"uplink,omitempty"`
 
 	Flags net.Flags `json:"-"`
 }

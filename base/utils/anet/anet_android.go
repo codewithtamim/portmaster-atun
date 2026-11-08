@@ -25,8 +25,50 @@ var (
 	notifierMu sync.RWMutex
 	notifier   Notifier
 
+	// uplinkName is the interface of the current uplink, empty while unknown.
+	uplinkName    string
+	uplinkChanged = utils.NewBroadcastFlag()
+
 	errInterfaceNotFound = errors.New("interface not found")
 )
+
+// UplinkChangedFlag returns a flag that is signalled when the uplink moves
+// from one interface to another, for example from mobile data to Wi-Fi.
+//
+// The interface list alone misses this: Wi-Fi appears as a new interface
+// first, and Android makes it the uplink a few seconds later, without any
+// interface change. Sockets opened on the old uplink stop working soon after.
+func UplinkChangedFlag() *utils.Flag {
+	return uplinkChanged.NewFlag()
+}
+
+// UplinkName returns the interface of the current uplink, or "" if unknown.
+func UplinkName() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return uplinkName
+}
+
+// updateUplink records the uplink of list and reports whether it moved to
+// another interface. Losing or first learning the uplink is not a move.
+func updateUplink(list []NetworkInterface) bool {
+	name := ""
+	for i := range list {
+		if list[i].Uplink {
+			name = list[i].Name
+			break
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if name == "" {
+		return false
+	}
+	moved := uplinkName != "" && uplinkName != name
+	uplinkName = name
+	return moved
+}
 
 func buildFromList(list []NetworkInterface) ([]net.Interface, []net.Addr, map[string][]net.Addr) {
 	var ifaces []net.Interface
@@ -104,6 +146,10 @@ func TriggerNetworkChange() {
 
 func UpdateInterfaces(list []NetworkInterface) {
 	updateCache(list)
+	if updateUplink(list) {
+		log.Infof("anet: uplink moved to %s", UplinkName())
+		uplinkChanged.NotifyAndReset()
+	}
 
 	notifierMu.RLock()
 	n := notifier
