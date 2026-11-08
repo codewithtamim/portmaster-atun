@@ -856,6 +856,12 @@ func (conn *Connection) Save() {
 		return
 	}
 
+	// Android only, see blocked_save_android.go.
+	endRefused(conn)
+	if !conn.KeyIsSet() && skipRepeatedBlock(conn) {
+		return
+	}
+
 	if !conn.KeyIsSet() {
 		if conn.Type == DNSRequest {
 			conn.SetKey(makeKey(conn.process.Pid, dbScopeDNS, conn.ID))

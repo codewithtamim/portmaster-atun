@@ -180,6 +180,9 @@ func (nq *NetQuery) Manager() *mgr.Manager {
 }
 
 func (nq *NetQuery) Start() error {
+	// Android only: close rows an earlier run left active.
+	repairStaleHistory(context.Background(), nq.Store)
+
 	nq.mgr.Go("netquery connection feed listener", func(ctx *mgr.WorkerCtx) error {
 		sub, err := nq.db.Subscribe(query.New("network:"))
 		if err != nil {
@@ -228,6 +231,8 @@ func (nq *NetQuery) Start() error {
 					log.Errorf("netquery: failed to removed old connections from live db: %s", err)
 				} else {
 					log.Tracef("netquery: successfully removed %d old connections from live db that ended before %s", count, threshold)
+					// Android only: end rows whose end update was lost.
+					reconcileActive(ctx.Ctx(), nq.Store)
 					compactLiveDB(ctx.Ctx(), nq.Store)
 				}
 			}
