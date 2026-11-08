@@ -491,7 +491,7 @@ func filterHandler(conn *network.Connection, pkt packet.Packet) {
 
 	// Check for special (internal) connection cases.
 	switch {
-	case !conn.Inbound && localPortIsPreAuthenticated(conn.Entity.Protocol, conn.LocalPort):
+	case !conn.Inbound && preAuthOwnerMatches(conn) && localPortIsPreAuthenticated(conn.Entity.Protocol, conn.LocalPort):
 		// Approve connection.
 		conn.Accept("connection by Portmaster", noReasonOptionKey)
 		conn.Internal = true

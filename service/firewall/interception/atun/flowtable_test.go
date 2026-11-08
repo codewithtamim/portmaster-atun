@@ -4,6 +4,7 @@ package atun
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	pmpacket "github.com/safing/portmaster/service/network/packet"
@@ -24,8 +25,8 @@ func TestReportBandwidthReapsRetiredWhenQueueIsFull(t *testing.T) {
 
 	const count = 20
 	for i := range count {
-		f, ok := flows.begin(string(rune('a'+i)), pmpacket.Info{})
-		if !ok {
+		f, err := flows.begin(string(rune('a'+i)), pmpacket.Info{})
+		if err != nil {
 			t.Fatalf("flow %d was not tracked", i)
 		}
 		// Unreported bytes, so each flow wants to send an update.
@@ -52,11 +53,11 @@ func TestFlowTableBeginIsIdempotentPerID(t *testing.T) {
 	}
 	t.Cleanup(TeardownFlowTable)
 
-	if _, ok := flows.begin("dup", pmpacket.Info{}); !ok {
-		t.Fatal("first begin was rejected")
+	if _, err := flows.begin("dup", pmpacket.Info{}); err != nil {
+		t.Fatalf("first begin was rejected: %s", err)
 	}
-	if _, ok := flows.begin("dup", pmpacket.Info{}); ok {
-		t.Error("second begin for the same id was accepted")
+	if _, err := flows.begin("dup", pmpacket.Info{}); !errors.Is(err, errFlowExists) {
+		t.Errorf("second begin for the same id: err = %v, want errFlowExists", err)
 	}
 }
 
@@ -66,9 +67,9 @@ func TestFlowTableEndRetiresAndGetMisses(t *testing.T) {
 	}
 	t.Cleanup(TeardownFlowTable)
 
-	f, ok := flows.begin("one", pmpacket.Info{})
-	if !ok {
-		t.Fatal("begin was rejected")
+	f, err := flows.begin("one", pmpacket.Info{})
+	if err != nil {
+		t.Fatalf("begin was rejected: %s", err)
 	}
 
 	f.close()

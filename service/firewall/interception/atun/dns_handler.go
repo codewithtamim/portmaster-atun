@@ -59,11 +59,12 @@ func shouldHandleDNS(s *stackSession, info pmpacket.Info, mark int) bool {
 	return isFakeDNSTarget(s, info) || mark == MarkRerouteNS
 }
 
-// dialDNSUpstream dials the nameserver for f. On a dial failure it logs, sends
-// a SERVFAIL reply through replyFail, closes f and returns (nil, false). On
-// success it registers the closers and DNS attribution and returns
-// (upstream, true); if the flow was already closed during dial it returns
-// (upstream, false) without attribution.
+// dialDNSUpstream dials the nameserver for f. On a dial failure, or when the
+// query cannot be attributed to its app, it logs, sends a SERVFAIL reply
+// through replyFail, closes f and returns (nil, false). An unattributed query
+// would be resolved without the app's settings. On success it registers the
+// closers and DNS attribution and returns (upstream, true); if the flow was
+// already closed during dial it returns (upstream, false) without attribution.
 func dialDNSUpstream(s *stackSession, f *flow, appConn net.Conn, replyFail func(net.Conn)) (net.Conn, bool) {
 	f.addCloser(appConn)
 
@@ -83,7 +84,12 @@ func dialDNSUpstream(s *stackSession, f *flow, appConn net.Conn, replyFail func(
 	}
 
 	// Register so resolver sees query from the app, not from us.
-	registerDNSAttribution(s, f, upstream)
+	if !registerDNSAttribution(s, f, upstream) {
+		replyFail(appConn)
+		f.close()
+
+		return nil, false
+	}
 
 	return upstream, true
 }
@@ -221,20 +227,21 @@ func writeTCPDNS(conn net.Conn, msg []byte) error {
 	return err
 }
 
-// registerDNSAttribution maps flow identity to the loopback socket for app attribution.
-func registerDNSAttribution(s *stackSession, f *flow, upstream net.Conn) {
+// registerDNSAttribution maps flow identity to the loopback socket for app
+// attribution. False means the query cannot be attributed.
+func registerDNSAttribution(s *stackSession, f *flow, upstream net.Conn) bool {
 	local, ok := upstream.LocalAddr().(*net.UDPAddr)
 	if !ok || local == nil {
-		log.Warningf("atun: no local UDP address for dns flow %s, request will be misattributed", f.id)
+		log.Warningf("atun: no local UDP address for dns flow %s, answering SERVFAIL", f.id)
 
-		return
+		return false
 	}
 
 	conn, ok := network.GetConnection(f.id)
 	if !ok {
-		log.Warningf("atun: no connection found for dns flow %s, request will be misattributed", f.id)
+		log.Warningf("atun: no connection found for dns flow %s, answering SERVFAIL", f.id)
 
-		return
+		return false
 	}
 
 	version := pmpacket.IPv6
@@ -256,6 +263,8 @@ func registerDNSAttribution(s *stackSession, f *flow, upstream net.Conn) {
 	pkt.SetCtx(s.ctx)
 
 	network.SaveDNSRequestConnection(conn, pkt)
+
+	return true
 }
 
 // servFailReply packs a SERVFAIL response for the given query bytes. It returns

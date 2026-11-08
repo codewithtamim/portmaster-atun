@@ -3,6 +3,7 @@
 package atun
 
 import (
+	"errors"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -59,8 +60,15 @@ func handleTCPFlow(s *stackSession, r *tcp.ForwarderRequest) {
 		info.Protocol, info.Src, info.SrcPort, info.Dst, info.DstPort, false,
 	)
 
-	f, ok := flows.begin(connID, info)
-	if !ok {
+	f, err := flows.begin(connID, info)
+	if err != nil {
+		if errors.Is(err, errFlowLimit) {
+			// RST, so the app fails fast instead of retrying the SYN.
+			flowLimitLog.warn("atun: tcp flow limit reached, refusing %s", dstAddr(info))
+			r.Complete(true)
+
+			return
+		}
 		// Dup SYN for a tuple with a verdict in flight. First attempt wins.
 		// Drop this one silent. gVisor needs exactly one Complete per request.
 		r.Complete(false)
@@ -75,7 +83,8 @@ func handleTCPFlow(s *stackSession, r *tcp.ForwarderRequest) {
 		}
 	}()
 
-	mark := decide(s, q, f)
+	v := decide(s, q, f)
+	mark := v.mark
 	// TCP DNS uses a 2-byte length prefix. The nameserver speaks UDP, so this
 	// path translates instead of proxying the bytes through.
 	dns := shouldHandleDNS(s, f.info, mark)
@@ -91,6 +100,13 @@ func handleTCPFlow(s *stackSession, r *tcp.ForwarderRequest) {
 	default:
 		// Drop: no RST, so the app sees a timeout, as with nfq's drop.
 		r.Complete(false)
+
+		return
+	}
+
+	if !dns && !flows.charge(f, v.uid) {
+		flowLimitLog.warn("atun: tcp flow limit reached for uid %s, refusing %s", uidString(v.uid), dstAddr(f.info))
+		r.Complete(true)
 
 		return
 	}
@@ -112,13 +128,21 @@ func handleTCPFlow(s *stackSession, r *tcp.ForwarderRequest) {
 	appConn := gonet.NewTCPConn(&wq, ep)
 
 	if dns {
+		if !v.decided {
+			// See handleUDPFlow: no verdict, no relay.
+			log.Warningf("atun: no verdict for dns flow %s, answering SERVFAIL", connID)
+			replyTCPServFail(appConn)
+			_ = appConn.Close()
+
+			return
+		}
 		handleTCPDNSFlow(s, f, appConn)
 
 		return
 	}
 
 	if mark == MarkRerouteSPN {
-		if handOffToSPN(f, appConn) {
+		if handOffToSPN(f, appConn, 0) {
 			handedOff = true
 
 			return

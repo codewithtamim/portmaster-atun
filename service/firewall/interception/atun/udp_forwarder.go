@@ -3,6 +3,7 @@
 package atun
 
 import (
+	"errors"
 	"net"
 
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -53,19 +54,16 @@ func handleUDPFlow(s *stackSession, id stack.TransportEndpointID, appConn net.Co
 		return
 	}
 
-	if flows.udpCount() >= maxUDPFlows {
-		log.Warningf("atun: udp flow limit reached, dropping %s", dstAddr(info))
-		_ = appConn.Close()
-		return
-	}
-
 	connID := pmpacket.CreateConnectionID(
 		info.Protocol, info.Src, info.SrcPort, info.Dst, info.DstPort, false,
 	)
 
-	f, ok := flows.begin(connID, info)
-	if !ok {
-		// The tuple already has a live flow. Keep that one.
+	f, err := flows.begin(connID, info)
+	if err != nil {
+		if errors.Is(err, errFlowLimit) {
+			flowLimitLog.warn("atun: udp flow limit reached, dropping %s", dstAddr(info))
+		}
+		// Else the tuple already has a live flow. Keep that one.
 		_ = appConn.Close()
 
 		return
@@ -80,11 +78,20 @@ func handleUDPFlow(s *stackSession, id stack.TransportEndpointID, appConn net.Co
 
 	f.addCloser(appConn)
 
-	mark := decide(s, q, f)
+	v := decide(s, q, f)
+	mark := v.mark
 
 	// Fake DNS is a black hole unless we answer it. Honour that before Block
-	// so a nameserver that is still starting does not drop system DNS.
+	// so a nameserver that is still starting does not drop system DNS. With
+	// no verdict at all the app is unknown, so answer SERVFAIL instead of
+	// relaying unchecked.
 	if shouldHandleDNS(s, f.info, mark) {
+		if !v.decided {
+			log.Warningf("atun: no verdict for dns flow %s, answering SERVFAIL", connID)
+			replyServFail(appConn)
+
+			return
+		}
 		handleDNSFlow(s, f, appConn)
 
 		return
@@ -103,8 +110,14 @@ func handleUDPFlow(s *stackSession, id stack.TransportEndpointID, appConn net.Co
 		return
 	}
 
+	if !flows.charge(f, v.uid) {
+		flowLimitLog.warn("atun: udp flow limit reached for uid %s, dropping %s", uidString(v.uid), dstAddr(f.info))
+
+		return
+	}
+
 	if mark == MarkRerouteSPN {
-		if handOffToSPN(f, appConn) {
+		if handOffToSPN(f, appConn, udpIdleTimeout) {
 			handedOff = true
 
 			return

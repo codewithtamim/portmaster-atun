@@ -45,6 +45,13 @@ func handleICMPEcho(s *stackSession, id stack.TransportEndpointID, pkt *stack.Pa
 		return true
 	}
 
+	// Each echo waits up to verdictTimeout for its verdict. Past the cap the
+	// echo is dropped, as a lost ping would be.
+	if !icmpSlots.acquire() {
+		flowLimitLog.warn("atun: icmp echo limit reached, dropping echo to %s", id.LocalAddress)
+		return true
+	}
+
 	// Clone so the worker can still read headers after gVisor reclaims pkt.
 	owned := pkt.Clone()
 	name := "atun ICMPv4 flow"
@@ -52,6 +59,7 @@ func handleICMPEcho(s *stackSession, id stack.TransportEndpointID, pkt *stack.Pa
 		name = "atun ICMPv6 flow"
 	}
 	if !s.runWorker(name, func() {
+		defer icmpSlots.release()
 		defer owned.DecRef()
 		if !allowICMP(s, id, protocol) {
 			return
@@ -63,9 +71,38 @@ func handleICMPEcho(s *stackSession, id stack.TransportEndpointID, pkt *stack.Pa
 		_ = replyICMPv4Echo(s, owned)
 	}) {
 		owned.DecRef()
+		icmpSlots.release()
 	}
 
 	return true
+}
+
+// maxICMPInFlight caps echo workers waiting for or sending a reply.
+const maxICMPInFlight = 64
+
+var icmpSlots = newSlots(maxICMPInFlight)
+
+// slots is a non-blocking counting semaphore.
+type slots chan struct{}
+
+func newSlots(n int) slots {
+	return make(slots, n)
+}
+
+func (s slots) acquire() bool {
+	select {
+	case s <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s slots) release() {
+	select {
+	case <-s:
+	default:
+	}
 }
 
 func allowICMP(s *stackSession, id stack.TransportEndpointID, protocol pmpacket.IPProtocol) bool {
@@ -75,13 +112,13 @@ func allowICMP(s *stackSession, id stack.TransportEndpointID, protocol pmpacket.
 	}
 	info := newPacketInfo(id, protocol)
 	connID := pmpacket.CreateConnectionID(info.Protocol, info.Src, info.SrcPort, info.Dst, info.DstPort, false)
-	f, ok := flows.begin(connID, info)
-	if !ok {
+	f, err := flows.begin(connID, info)
+	if err != nil {
 		return false
 	}
 	defer f.close()
 
-	return markIsAccept(decide(s, q, f))
+	return markIsAccept(decide(s, q, f).mark)
 }
 
 // replyICMPv4Echo writes an Echo Reply back through the TUN.

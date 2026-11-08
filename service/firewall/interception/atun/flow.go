@@ -33,6 +33,11 @@ type flow struct {
 	mu      sync.Mutex
 	closers []io.Closer
 	closed  bool
+
+	// Cap bookkeeping, guarded by flows.mu. ownerUID is -1 until charged.
+	ownerUID     int
+	countedTotal bool
+	countedUID   bool
 }
 
 func (f *flow) appliedMark() int {
@@ -125,20 +130,30 @@ func (c *countingConn) CloseWrite() error {
 	return nil
 }
 
+// verdict is the outcome of decide.
+type verdict struct {
+	mark int
+	// decided is false when the firewall gave no verdict: the queue was full
+	// or closed, the wait timed out, or the session ended. mark is MarkDrop.
+	decided bool
+	// uid is the owning app as the firewall found it, nil if unknown.
+	uid *int
+}
+
 // decide submits the flow and waits for its verdict. It fails closed: no
 // verdict, for any reason, is MarkDrop. The caller enforces the mark.
-func decide(s *stackSession, q *Queue, f *flow) int {
+func decide(s *stackSession, q *Queue, f *flow) verdict {
 	// Non-DNS traffic to a routed-in local DNS server is local traffic and
 	// gets no decision. See localDNSHosts.
 	if !isDNSPort(f.info) && isLocalDNSHost(f.info.Dst) {
 		f.mark.Store(int32(MarkAcceptAlways))
-		return MarkAcceptAlways
+		return verdict{mark: MarkAcceptAlways, decided: true}
 	}
 
 	pkt := q.newPacket(f.info)
 
 	if !q.submit(pkt) {
-		return MarkDrop
+		return verdict{mark: MarkDrop}
 	}
 
 	select {
@@ -150,17 +165,25 @@ func decide(s *stackSession, q *Queue, f *flow) int {
 		// the flow has timed out and is dropped either way.
 		_ = pkt.Drop()
 
-		return MarkDrop
+		return verdict{mark: MarkDrop}
 	case <-s.ctx.Done():
 		_ = pkt.Drop()
-		return MarkDrop
+		return verdict{mark: MarkDrop}
 	}
 
 	mark := pkt.appliedMark()
 	f.mark.Store(int32(mark))
 	log.Tracef("atun: %s verdict %s", pkt, markToString(mark))
 
-	return mark
+	// The firewall wrote the owner into the packet info before the verdict;
+	// closing verdictSet orders that write before this read.
+	var uid *int
+	if u := pkt.Info().UID; u != nil {
+		v := *u
+		uid = &v
+	}
+
+	return verdict{mark: mark, decided: true, uid: uid}
 }
 
 func markIsAccept(mark int) bool {
@@ -198,7 +221,9 @@ func (c *ownedConn) Close() error {
 // handOffToSPN gives the connection to crew directly. Sluice is skipped
 // because it accepts redirected kernel sockets, and here there is none.
 // Crew owns the connection afterwards; the flow stays tracked for bandwidth.
-func handOffToSPN(f *flow, appConn net.Conn) bool {
+// A non-zero idleTimeout closes the flow after that long without traffic, as
+// proxyFlow does for UDP, which has no end of its own.
+func handOffToSPN(f *flow, appConn net.Conn, idleTimeout time.Duration) bool {
 	conn, ok := network.GetConnection(f.id)
 	if !ok {
 		log.Warningf("atun: no connection found for tunnelled flow %s", f.id)
@@ -206,10 +231,80 @@ func handOffToSPN(f *flow, appConn net.Conn) bool {
 		return false
 	}
 
-	counted := &countingConn{Conn: appConn, flow: f}
-	owned := &ownedConn{Conn: counted, flow: f}
+	var owned net.Conn = &ownedConn{Conn: &countingConn{Conn: appConn, flow: f}, flow: f}
+	if idleTimeout > 0 {
+		owned = newIdleConn(owned, idleTimeout)
+	}
 	f.addCloser(owned)
 	crew.HandleSluiceRequest(conn, owned)
 
 	return true
+}
+
+// idleConn closes its conn after timeout without a successful read or write.
+type idleConn struct {
+	net.Conn
+
+	timeout    time.Duration
+	lastActive atomic.Int64
+	timer      *time.Timer
+	closed     atomic.Bool
+}
+
+func newIdleConn(c net.Conn, timeout time.Duration) *idleConn {
+	ic := &idleConn{Conn: c, timeout: timeout}
+	ic.touch()
+	// Create stopped, so check never sees a nil timer.
+	ic.timer = time.AfterFunc(time.Hour, ic.check)
+	ic.timer.Stop()
+	ic.timer.Reset(timeout)
+
+	return ic
+}
+
+func (c *idleConn) touch() {
+	c.lastActive.Store(time.Now().UnixNano())
+}
+
+func (c *idleConn) check() {
+	if c.closed.Load() {
+		return
+	}
+	idle := time.Since(time.Unix(0, c.lastActive.Load()))
+	if idle >= c.timeout {
+		log.Tracef("atun: closing flow idle for %s", idle.Round(time.Second))
+		_ = c.Close()
+
+		return
+	}
+	c.timer.Reset(c.timeout - idle)
+}
+
+func (c *idleConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 {
+		c.touch()
+	}
+
+	return n, err
+}
+
+func (c *idleConn) Write(b []byte) (int, error) {
+	n, err := c.Conn.Write(b)
+	if n > 0 {
+		c.touch()
+	}
+
+	return n, err
+}
+
+// Close is idempotent. The flow closes its closers, which includes this
+// conn, so a nested call returns at once.
+func (c *idleConn) Close() error {
+	if !c.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	c.timer.Stop()
+
+	return c.Conn.Close()
 }
