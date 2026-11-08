@@ -2,6 +2,8 @@
 
 package api
 
+import "net/http"
+
 // devModeGrantsAccess lets Development Mode bypass authentication.
 func devModeGrantsAccess() bool {
 	return true
@@ -15,4 +17,15 @@ func platformListenAddress(configured string) string {
 // platformAPIKey matches nothing: desktop keys all come from the api/keys setting.
 func platformAPIKey(string) (*AuthToken, bool) {
 	return nil, false
+}
+
+// DebugReadPermission is the read permission of the debug, profiling and
+// resolver status endpoints.
+func DebugReadPermission() Permission {
+	return PermitAnyone
+}
+
+// platformHandler returns the handler unchanged.
+func platformHandler(next http.Handler, _ string) http.Handler {
+	return next
 }

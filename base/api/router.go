@@ -60,10 +60,10 @@ func startServer() {
 
 	// Configure server.
 	server.Addr = platformListenAddress(listenAddressConfig())
-	server.Handler = &mainHandler{
+	server.Handler = platformHandler(&mainHandler{
 		// TODO: mainMux should not be modified anymore.
 		mux: mainMux,
-	}
+	}, server.Addr)
 
 	// Start server manager.
 	module.mgr.Go("http server manager", serverManager)

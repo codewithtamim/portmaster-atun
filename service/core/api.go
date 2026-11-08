@@ -59,7 +59,7 @@ func registerAPIEndpoints() error {
 
 	if err := api.RegisterEndpoint(api.Endpoint{
 		Path:        "debug/core",
-		Read:        api.PermitAnyone,
+		Read:        api.DebugReadPermission(),
 		DataFunc:    debugInfo,
 		Name:        "Get Debug Information",
 		Description: "Returns network debugging information, similar to debug/info, but with system status data.",

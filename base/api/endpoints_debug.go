@@ -39,7 +39,7 @@ func registerDebugEndpoints() error {
 
 	if err := RegisterEndpoint(Endpoint{
 		Path:        "debug/stack",
-		Read:        PermitAnyone,
+		Read:        DebugReadPermission(),
 		DataFunc:    getStack,
 		Name:        "Get Goroutine Stack",
 		Description: "Returns the current goroutine stack.",
@@ -49,7 +49,7 @@ func registerDebugEndpoints() error {
 
 	if err := RegisterEndpoint(Endpoint{
 		Path:        "debug/stack/print",
-		Read:        PermitAnyone,
+		Read:        DebugReadPermission(),
 		ActionFunc:  printStack,
 		Name:        "Print Goroutine Stack",
 		Description: "Prints the current goroutine stack to stdout.",
@@ -60,7 +60,7 @@ func registerDebugEndpoints() error {
 	if err := RegisterEndpoint(Endpoint{
 		Path:     "debug/cpu",
 		MimeType: "application/octet-stream",
-		Read:     PermitAnyone,
+		Read:     DebugReadPermission(),
 		DataFunc: handleCPUProfile,
 		Name:     "Get CPU Profile",
 		Description: strings.ReplaceAll(`Gather and return the CPU profile.
@@ -82,7 +82,7 @@ You can easily view this data in your browser with this command (with Go install
 	if err := RegisterEndpoint(Endpoint{
 		Path:     "debug/heap",
 		MimeType: "application/octet-stream",
-		Read:     PermitAnyone,
+		Read:     DebugReadPermission(),
 		DataFunc: handleHeapProfile,
 		Name:     "Get Heap Profile",
 		Description: strings.ReplaceAll(`Gather and return the heap memory profile.
@@ -97,7 +97,7 @@ You can easily view this data in your browser with this command (with Go install
 	if err := RegisterEndpoint(Endpoint{
 		Path:     "debug/allocs",
 		MimeType: "application/octet-stream",
-		Read:     PermitAnyone,
+		Read:     DebugReadPermission(),
 		DataFunc: handleAllocsProfile,
 		Name:     "Get Allocs Profile",
 		Description: strings.ReplaceAll(`Gather and return the memory allocation profile.
@@ -111,7 +111,7 @@ You can easily view this data in your browser with this command (with Go install
 
 	if err := RegisterEndpoint(Endpoint{
 		Path:        "debug/info",
-		Read:        PermitAnyone,
+		Read:        DebugReadPermission(),
 		DataFunc:    debugInfo,
 		Name:        "Get Debug Information",
 		Description: "Returns debugging information, including the version and platform info, errors, logs and the current goroutine stack.",

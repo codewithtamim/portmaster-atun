@@ -20,7 +20,7 @@ func registerAPI() error {
 
 	if err := api.RegisterEndpoint(api.Endpoint{
 		Path:        "dns/resolvers",
-		Read:        api.PermitAnyone,
+		Read:        api.DebugReadPermission(),
 		StructFunc:  exportDNSResolvers,
 		Name:        "List DNS Resolvers",
 		Description: "List currently configured DNS resolvers and their status.",

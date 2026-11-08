@@ -341,7 +341,7 @@ func checkAPIKey(r *http.Request) *AuthToken {
 	}
 	if !ok {
 		log.Tracer(r.Context()).Tracef(
-			"api: provided api key %s... is unknown", key[:4],
+			"api: provided api key %s... is unknown", keyPrefix(key),
 		)
 		return nil
 	}
@@ -353,6 +353,15 @@ func checkAPIKey(r *http.Request) *AuthToken {
 	}
 
 	return token
+}
+
+// keyPrefix returns the first four bytes of key for logging, or all of a
+// shorter key.
+func keyPrefix(key string) string {
+	if len(key) < 4 {
+		return key
+	}
+	return key[:4]
 }
 
 func updateAPIKeys() {

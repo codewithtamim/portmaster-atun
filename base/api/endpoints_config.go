@@ -7,7 +7,7 @@ import (
 func registerConfigEndpoints() error {
 	if err := RegisterEndpoint(Endpoint{
 		Path:        "config/options",
-		Read:        PermitAnyone,
+		Read:        DebugReadPermission(),
 		MimeType:    MimeTypeJSON,
 		StructFunc:  listConfig,
 		Name:        "Export Configuration Options",

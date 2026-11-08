@@ -5,6 +5,8 @@ package api
 import (
 	"crypto/subtle"
 	"net"
+	"net/http"
+	"strings"
 	"sync/atomic"
 
 	"github.com/safing/portmaster/base/log"
@@ -71,4 +73,52 @@ func platformAPIKey(key string) (*AuthToken, bool) {
 	// A copy: checkAPIKey's caller must not be able to change the template.
 	token := processAPIToken
 	return &token, true
+}
+
+// DebugReadPermission is the read permission of the debug, profiling and
+// resolver status endpoints. On Android every installed app can reach the
+// API, so these need the app's key.
+func DebugReadPermission() Permission {
+	return PermitUser
+}
+
+// platformHandler rejects requests whose Host header is not a loopback name
+// with the listen port. A web page that rebinds its own domain to 127.0.0.1
+// then cannot read the API through the phone's browser.
+func platformHandler(next http.Handler, listenAddress string) http.Handler {
+	allowed := allowedHosts(listenAddress)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Bridged requests are built in process and carry no real Host.
+		if r.RemoteAddr != endpointBridgeRemoteAddress && !hostAllowed(allowed, r.Host) {
+			log.Warningf("api: denied request from %s: invalid Host %q", r.RemoteAddr, r.Host)
+			http.Error(w, "Invalid Host.", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func allowedHosts(listenAddress string) []string {
+	host, port, err := net.SplitHostPort(listenAddress)
+	if err != nil || port == "" {
+		return nil
+	}
+	hosts := []string{
+		net.JoinHostPort("127.0.0.1", port),
+		net.JoinHostPort("localhost", port),
+		net.JoinHostPort("::1", port),
+	}
+	if host != "" {
+		hosts = append(hosts, net.JoinHostPort(host, port))
+	}
+	return hosts
+}
+
+func hostAllowed(allowed []string, host string) bool {
+	for _, a := range allowed {
+		if strings.EqualFold(a, host) {
+			return true
+		}
+	}
+	return false
 }
