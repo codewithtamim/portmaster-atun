@@ -443,9 +443,17 @@ func resolveAndCache(ctx context.Context, q *Query, oldCache *RRCache) (rrCache 
 			log.Tracer(ctx).Tracef("resolver: asking failing resolver %s, because no resolver answered so far", resolver)
 		}
 
+		// Android: hold the query while routing lockdown waits for the SPN.
+		queryCtx, holdErr := spnLockdownGate(ctx, q, resolver)
+		if holdErr != nil {
+			log.Tracer(ctx).Tracef("resolver: not sending query for %s to %s: %s", q.ID(), resolver.Info.ID(), holdErr)
+			err = holdErr
+			continue
+		}
+
 		// resolve
 		log.Tracer(ctx).Tracef("resolver: sending query for %s to %s", q.ID(), resolver.Info.ID())
-		rrCache, err = resolver.Conn.Query(ctx, q)
+		rrCache, err = resolver.Conn.Query(queryCtx, q)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrNotFound):

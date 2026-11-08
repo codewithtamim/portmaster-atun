@@ -4,8 +4,10 @@ package resolver
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tevino/abool"
@@ -81,4 +83,39 @@ func TestLockDialStopsWaitingWhenTheQueryEnds(t *testing.T) {
 	conn, _, err := tr.lockDial(ctx, 0)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Nil(t, conn)
+}
+
+// The package tests run a live resolver module, which adds slots of its own,
+// so this checks the key of one resolver rather than counting.
+func TestDialSlotIsDroppedWithItsResolver(t *testing.T) {
+	t.Parallel()
+
+	var key weak.Pointer[TCPResolver]
+	func() {
+		tr := &TCPResolver{}
+		key = weak.Make(tr)
+		_, unlock, err := tr.lockDial(context.Background(), 0)
+		require.NoError(t, err)
+		unlock()
+		_, ok := dialSlots.Load(key)
+		require.True(t, ok)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := dialSlots.Load(key); !ok {
+			return
+		}
+		runtime.GC()
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("slot of a collected resolver was not deleted")
+}
+
+func TestDialSlotIsStablePerResolver(t *testing.T) {
+	t.Parallel()
+
+	tr := &TCPResolver{}
+	require.Equal(t, dialSlot(tr), dialSlot(tr))
+	require.NotEqual(t, dialSlot(tr), dialSlot(&TCPResolver{}))
 }

@@ -3,6 +3,7 @@
 package resolver
 
 import (
+	"context"
 	"net"
 	"net/http"
 
@@ -18,3 +19,7 @@ func routeResolverTransport(tr *http.Transport) *http.Transport {
 }
 
 func reconnectOnRouteChange() {}
+
+func spnLockdownGate(ctx context.Context, _ *Query, _ *Resolver) (context.Context, error) {
+	return ctx, nil
+}

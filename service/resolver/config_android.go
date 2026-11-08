@@ -8,11 +8,12 @@ import (
 
 	"github.com/safing/portmaster/base/config"
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/service/routing"
 )
 
 // CfgOptionUseSPNKey controls whether resolver sockets enter TUN/SPN.
 // Default true matches the Android DNS screen. Lookups still go direct
-// until SPN is connected, see resolverShouldUseSPN.
+// until SPN is connected, see routeState in route_android.go.
 const CfgOptionUseSPNKey = "dns/useSPN"
 
 const cfgOptionUseSPNOrder = 6
@@ -38,23 +39,33 @@ func registerAndroidDNSConfig() error {
 	return nil
 }
 
-// prevUseSPN is atomic because config change callbacks run concurrently.
-var prevUseSPN atomic.Bool
+// prevUseSPN and prevLockdown are atomic because config change callbacks run
+// concurrently.
+var (
+	prevUseSPN   atomic.Bool
+	prevLockdown atomic.Bool
+)
 
 func captureUseSPN() {
 	if useSpnLookups != nil {
 		prevUseSPN.Store(useSpnLookups())
 	}
+	prevLockdown.Store(routing.Lockdown())
 }
 
+// onUseSPNConfigChange reconnects the resolvers when dns/useSPN or routing
+// lockdown changes, so open connections do not keep the old route.
 func onUseSPNConfigChange(ctx context.Context) {
 	if useSpnLookups == nil {
 		return
 	}
 	newUseSPN := useSpnLookups()
-	if prevUseSPN.Swap(newUseSPN) == newUseSPN {
+	newLockdown := routing.Lockdown()
+	useSPNChanged := prevUseSPN.Swap(newUseSPN) != newUseSPN
+	lockdownChanged := prevLockdown.Swap(newLockdown) != newLockdown
+	if !useSPNChanged && !lockdownChanged {
 		return
 	}
 	ForceResolverReconnect(ctx)
-	log.Debug("resolver: forced reconnect after dns/useSPN change")
+	log.Debug("resolver: forced reconnect after dns/useSPN or routing lockdown change")
 }

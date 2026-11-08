@@ -4,11 +4,26 @@ package resolver
 
 import (
 	"context"
+	"runtime"
 	"sync"
+	"weak"
 )
 
-// dialSlots holds one dial slot per TCP resolver.
-var dialSlots sync.Map // *TCPResolver -> chan struct{}
+// dialSlots holds one dial slot per TCP resolver. The key is weak and the
+// entry is deleted once its resolver is collected, so resolvers replaced on a
+// network change do not pile up here.
+var dialSlots sync.Map // weak.Pointer[TCPResolver] -> chan struct{}
+
+func dialSlot(tr *TCPResolver) chan struct{} {
+	key := weak.Make(tr)
+	value, loaded := dialSlots.LoadOrStore(key, make(chan struct{}, 1))
+	if !loaded {
+		runtime.AddCleanup(tr, func(k weak.Pointer[TCPResolver]) {
+			dialSlots.Delete(k)
+		}, key)
+	}
+	return value.(chan struct{}) //nolint:forcetypeassert // Only this function stores values.
+}
 
 // lockDial lets one query at a time connect to the resolver.
 //
@@ -21,8 +36,7 @@ var dialSlots sync.Map // *TCPResolver -> chan struct{}
 // A query that waited for the slot uses the connection the previous holder
 // created, if there is one. Otherwise it dials and must call unlock after.
 func (tr *TCPResolver) lockDial(ctx context.Context, seenInstanceID int) (conn *tcpResolverConn, unlock func(), err error) {
-	value, _ := dialSlots.LoadOrStore(tr, make(chan struct{}, 1))
-	slot := value.(chan struct{}) //nolint:forcetypeassert // Only this function stores values.
+	slot := dialSlot(tr)
 
 	select {
 	case slot <- struct{}{}:
