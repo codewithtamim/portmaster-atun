@@ -93,8 +93,9 @@ func handleTCPFlow(s *stackSession, r *tcp.ForwarderRequest) {
 	case dns, markIsAccept(mark), mark == MarkRerouteSPN, mark == MarkRerouteSplitTun, mark == MarkRerouteWireGuard:
 		// Handled below.
 	case markIsBlock(mark):
-		// Complete(true) answers the SYN with RST, so the app fails fast.
-		r.Complete(true)
+		// Complete(true) answers the SYN with RST, so the app fails fast,
+		// unless it is retrying in a tight loop: see fail_fast.go.
+		r.Complete(failFast(v.uid))
 
 		return
 	default:
