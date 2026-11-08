@@ -97,7 +97,21 @@ func TestMeteredIsMobile(t *testing.T) { //nolint:paralleltest // device state i
 	}
 }
 
-func TestPushServicesExemptWhileLocked(t *testing.T) {
+type fakePushAppInfo map[int32]string
+
+func (f fakePushAppInfo) GetAppInfoJSON(uid int32) string { return f[uid] }
+
+func TestPushServicesExemptWhileLocked(t *testing.T) { //nolint:paralleltest // app info provider is global
+	aconn.RegisterAppInfoProvider(fakePushAppInfo{
+		10150: `{"packageName":"com.google.android.gms","systemApp":true}`,
+		10151: `{"packageName":"com.google.android.gms","systemApp":false,"signer":"5f2391277b1dbd489000467e4c2fa6af802430080457dce2f618992e9dfb5402"}`,
+		10152: `{"packageName":"com.google.android.gms","systemApp":false,"signer":"00aa"}`,
+		10153: `{"packageName":"com.google.android.gsf","systemApp":false}`,
+		10154: `{"packageName":"com.google.android.gsf","signer":"11bb","signerHistory":["7ce83c1b71f3d572fed04c8d40c5cb10ff75e6d87d9df6fbd53f0468c2905053","11bb"]}`,
+		10200: `{"packageName":"com.example.chat","systemApp":true}`,
+	})
+	t.Cleanup(func() { aconn.RegisterAppInfoProvider(nil) })
+
 	cases := []struct {
 		name string
 		proc *process.Process
@@ -106,6 +120,11 @@ func TestPushServicesExemptWhileLocked(t *testing.T) {
 		{"system", &process.Process{UserID: 1000}, true},
 		{"play services", &process.Process{UserID: 10150, ExecName: "com.google.android.gms"}, true},
 		{"shared google uid", &process.Process{UserID: 10150, ExecName: "com.google.android.gsf.login", Path: "com.google.uid.shared"}, true},
+		{"sandboxed play", &process.Process{UserID: 10151, ExecName: "com.google.android.gms"}, true},
+		{"rotated google key", &process.Process{UserID: 10154, ExecName: "com.google.android.gsf"}, true},
+		{"sideloaded under gms name", &process.Process{UserID: 10152, ExecName: "com.google.android.gms"}, false},
+		{"sideloaded under gsf name, no signer", &process.Process{UserID: 10153, ExecName: "com.google.android.gsf"}, false},
+		{"lookup fails", &process.Process{UserID: 10199, ExecName: "com.google.android.gms"}, false},
 		{"ordinary app", &process.Process{UserID: 10200, ExecName: "com.example.chat", Path: "/data/app/x/base.apk"}, false},
 	}
 	for _, c := range cases {

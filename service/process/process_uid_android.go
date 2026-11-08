@@ -71,6 +71,7 @@ func GetProcessWithProfileByUID(ctx context.Context, uid int) (process *Process,
 	}
 
 	if changed {
+		checkAndroidSigner(ctx, process)
 		process.Save()
 	}
 
@@ -114,7 +115,7 @@ func GetOrFindProcessByUID(ctx context.Context, uid int) (*Process, error) {
 
 func loadProcessByUID(ctx context.Context, key string, uid int) (*Process, error) {
 	if process, ok := GetProcessFromStorage(key); ok {
-		return refreshAndroidIdentity(process), nil
+		return refreshAndroidIdentity(ctx, process), nil
 	}
 
 	info, err := aconn.GetAppInfo(uid)
@@ -127,9 +128,20 @@ func loadProcessByUID(ctx context.Context, key string, uid int) (*Process, error
 		log.Tracer(ctx).Debugf("profile: added tags: %+v", process.Tags)
 	}
 
-	process.Save()
 	attachSharedProfile(info)
+	bindAndroidProfile(ctx, process)
+	process.Save()
 	return process, nil
+}
+
+// bindAndroidProfile binds the profile and checks its signer before the
+// process is shared, so no connection sees settings made for another app.
+func bindAndroidProfile(ctx context.Context, p *Process) {
+	if _, err := p.GetProfile(ctx); err != nil {
+		log.Tracer(ctx).Errorf("process: failed to get profile for process %s: %s", p, err)
+		return
+	}
+	checkAndroidSigner(ctx, p)
 }
 
 // newAndroidProcess builds the Process of the app with the given UID, with
@@ -178,26 +190,30 @@ func androidIdentityPath(info *aconn.AppInfo) string {
 	return appPath(info)
 }
 
-// refreshAndroidIdentity returns p, or a replacement when the app's label or
-// shared identity changed. The replacement has no profile yet, so the next
-// lookup binds the group profile.
+// refreshAndroidIdentity returns p, or a replacement when the app's label,
+// shared identity or signer changed. The replacement has no profile yet, so
+// the next lookup binds the group profile.
 //
 // p itself is never changed: connections already hold it and read its
 // profile without locking, so it keeps the profile it was evaluated with.
-func refreshAndroidIdentity(p *Process) *Process {
+//
+// If the app can no longer be looked up, the UID may now belong to another
+// app, so p is dropped and the unidentified process is returned.
+func refreshAndroidIdentity(ctx context.Context, p *Process) *Process {
 	if p.UserID < 0 {
 		return p
 	}
 	info, err := aconn.GetAppInfo(p.UserID)
 	if err != nil || info == nil {
-		return p
+		log.Tracer(ctx).Debugf("process: dropping stored app for uid %d: %v", p.UserID, err)
+		p.Delete()
+		return GetUnidentifiedProcess(ctx)
 	}
 
 	p.Lock()
 	shared, _ := p.GetTag(profile.AndroidSharedUserTagKey)
-	unchanged := p.Name == info.Name() &&
-		p.Path == androidIdentityPath(info) &&
-		shared.Value == info.SharedUserID
+	signer, _ := p.GetTag(profile.AndroidSignerTagKey)
+	unchanged := androidIdentityUnchanged(p.Name, p.Path, shared.Value, signer.Value, info)
 	firstSeen := p.FirstSeen
 	p.Unlock()
 	if unchanged {
@@ -206,9 +222,54 @@ func refreshAndroidIdentity(p *Process) *Process {
 
 	// Save replaces p in the process storage, as both share the key.
 	fresh := newAndroidProcess(p.UserID, p.processKey, info, firstSeen)
-	fresh.Save()
 	attachSharedProfile(info)
+	bindAndroidProfile(ctx, fresh)
+	fresh.Save()
 	return fresh
+}
+
+// androidIdentityUnchanged reports whether a stored process still describes
+// info. The stored shared tag carries the Android user, as AddTags writes it.
+func androidIdentityUnchanged(name, path, sharedTag, signerTag string, info *aconn.AppInfo) bool {
+	wantShared := ""
+	if info.SharedUserID != "" {
+		wantShared = profile.AndroidUserIdentity(info.SharedUserID, info.AndroidUser)
+	}
+	return name == info.Name() &&
+		path == androidIdentityPath(info) &&
+		sharedTag == wantShared &&
+		signerTag == info.Signer
+}
+
+// checkAndroidSigner makes sure a newly bound profile was made for the
+// developer that signs the app now, and cleans a name stored before labels
+// were cleaned. When the settings were reset, the
+// process is bound again so it does not keep a stale view of the profile.
+func checkAndroidSigner(ctx context.Context, p *Process) {
+	if !p.hasIdentifiedOwner() || p.getSpecialProfileID() != "" {
+		return
+	}
+	local := p.Profile().LocalProfile()
+	if local == nil {
+		return
+	}
+	info, err := aconn.GetAppInfo(p.UserID)
+	if err != nil {
+		return
+	}
+	if err := profile.CleanAndroidProfileName(local); err != nil {
+		log.Tracer(ctx).Warningf("process: failed to clean profile name of %s: %s", p, err)
+	}
+	reset, err := profile.CheckAndroidSigner(local, info)
+	if err != nil {
+		log.Tracer(ctx).Warningf("process: signer check for %s: %s", p, err)
+	}
+	if !reset {
+		return
+	}
+	if err := p.RefetchProfile(ctx); err != nil {
+		log.Tracer(ctx).Warningf("process: failed to rebind profile of %s: %s", p, err)
+	}
 }
 
 // sharedProfileReady remembers a sharedUserId whose group profile was ensured

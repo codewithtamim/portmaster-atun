@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/safing/portmaster/base/notifications"
+	"github.com/safing/portmaster/base/utils/aconn"
 	"github.com/safing/portmaster/base/utils/anotif"
 	"github.com/safing/portmaster/service/mgr"
 	"github.com/safing/portmaster/service/process"
@@ -50,6 +51,10 @@ func shownByPlatform(issue *appIssue, proc *process.Process, eventID string) boo
 
 // showNotification shows the warning through anotif when it handles them.
 func showNotification(n *notifications.Notification) {
+	// Titles and messages quote profile names, which may predate label
+	// cleaning: strip what could restyle or split the text.
+	n.Title = aconn.StripUnsafeText(n.Title)
+	n.Message = aconn.StripUnsafeText(n.Message)
 	if anotif.Handles() {
 		anotif.Deliver(n.EventID, n.Title, n.Message)
 		return
@@ -63,28 +68,43 @@ func deliverSecureDNSImmediately(issue *appIssue, proc *process.Process, eventID
 	if proc == nil {
 		return false
 	}
-	name := proc.Name
-	if name == "" {
-		name = "An app"
-	}
+	name := notifyAppName(proc)
 	switch issue {
 	case secureDNSSkippedIssue:
 		anotif.Deliver(
 			eventID,
-			name+" uses its own secure DNS",
-			"Lookups from "+name+" skip Portmaster. Turn off secure DNS in that app.",
+			"App "+name+" uses its own secure DNS",
+			"Lookups from the app "+name+" skip Portmaster. Turn off secure DNS in that app.",
 		)
 	case secureDNSBypassIssue:
 		anotif.Deliver(
 			eventID,
-			"Portmaster blocked "+name+"'s own secure DNS",
-			"Its lookups stay filtered. If "+name+" doesn't connect, turn off secure DNS in that app.",
+			"Portmaster blocked the secure DNS of app "+name,
+			"Its lookups stay filtered. If the app "+name+" doesn't connect, turn off secure DNS in that app.",
 		)
 	default:
 		return false
 	}
 	armSecureDNSClear(eventID)
 	return true
+}
+
+// notifyAppName is the app's name as quoted in a notification. The label is
+// chosen by the app, so it is cleaned and quoted, and the package name is
+// added when it differs, so the text cannot pass for Portmaster's own.
+func notifyAppName(proc *process.Process) string {
+	label := aconn.SafeLabel(proc.Name)
+	pkg := aconn.SafeLabel(proc.ExecName)
+	switch {
+	case label == "" && pkg == "":
+		return "(unknown)"
+	case label == "":
+		return pkg
+	case pkg == "" || pkg == label:
+		return "\u201c" + label + "\u201d"
+	default:
+		return "\u201c" + label + "\u201d (" + pkg + ")"
+	}
 }
 
 func armSecureDNSClear(eventID string) {

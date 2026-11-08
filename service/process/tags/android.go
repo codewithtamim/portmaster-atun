@@ -55,6 +55,11 @@ func (h *AndroidHandler) TagDescriptions() []process.TagDescription {
 			Name:        "Android Shared User",
 			Description: "The sharedUserId of apps that are one firewall identity.",
 		},
+		{
+			ID:          profile.AndroidSignerTagKey,
+			Name:        "Android Signer",
+			Description: "The SHA-256 of the app's signing certificate. Not used to match apps.",
+		},
 	}
 }
 
@@ -69,6 +74,10 @@ func (h *AndroidHandler) AddTags(p *process.Process) {
 	if err != nil {
 		log.Warningf("tags: failed to get android app info for uid %d: %s", p.UserID, err)
 		return
+	}
+
+	if info.Signer != "" {
+		p.Tags = append(p.Tags, profile.Tag{Key: profile.AndroidSignerTagKey, Value: info.Signer})
 	}
 
 	// A cloned app is the same package as another Android user. Its identity

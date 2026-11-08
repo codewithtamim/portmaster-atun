@@ -15,6 +15,7 @@ import (
 	"github.com/safing/portmaster/base/database"
 	"github.com/safing/portmaster/base/database/query"
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/base/utils/aconn"
 )
 
 const (
@@ -203,11 +204,13 @@ func handleEnsureProfile(ar *api.Request) (interface{}, error) {
 	if packageName == "" {
 		return nil, api.ErrorWithStatus(errPackageNameRequired, http.StatusBadRequest)
 	}
+	// Names come from app labels, which the apps choose.
+	name := aconn.SafeLabel(body.Name)
 	sharedUserID := strings.TrimSpace(body.SharedUserID)
 	if sharedUserID != "" {
-		return EnsureSharedAndroidProfile(sharedUserID, strings.TrimSpace(body.Name), body.Members)
+		return EnsureSharedAndroidProfile(sharedUserID, name, body.Members)
 	}
-	return ensureAndroidPackageProfile(packageName, strings.TrimSpace(body.Name))
+	return ensureAndroidPackageProfile(packageName, name)
 }
 
 func handleHistorySettings(ar *api.Request) (interface{}, error) {

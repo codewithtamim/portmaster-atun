@@ -22,6 +22,10 @@ const AndroidUserPackageTagKey = "android-user-package"
 // AndroidUIDTagKey records the current numeric UID. It is not a fingerprint.
 const AndroidUIDTagKey = "android-uid"
 
+// AndroidSignerTagKey records the SHA-256 of the app's signing certificate.
+// It is never a fingerprint: apps of one developer share it.
+const AndroidSignerTagKey = "android-signer"
+
 // SplitAndroidUserIdentity splits "<identity>@<user>" into its parts. An
 // identity without a user suffix belongs to user 0.
 func SplitAndroidUserIdentity(value string) (string, int) {

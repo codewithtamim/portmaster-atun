@@ -28,14 +28,49 @@ var pushDeliveryIdentities = map[string]struct{}{
 	"com.google.uid.shared":  {},
 }
 
+// googlePushSigners are the SHA-256 digests of Google's certificates for Play
+// Services and the Services Framework. Sandboxed Play is a user app, so the
+// name alone is not enough: anyone can install an app under these names where
+// Google's apps are missing.
+var googlePushSigners = []string{
+	"5f2391277b1dbd489000467e4c2fa6af802430080457dce2f618992e9dfb5402", // Play Services
+	"7ce83c1b71f3d572fed04c8d40c5cb10ff75e6d87d9df6fbd53f0468c2905053", // Services Framework
+}
+
 // exemptWhileLocked reports whether the app keeps network access while the
 // phone is locked: the system, and the push services other apps rely on.
 func exemptWhileLocked(proc *process.Process) bool {
 	if proc.UserID < androidFirstAppUID {
 		return true
 	}
+	named := false
 	for _, id := range []string{proc.ExecName, proc.UserName, proc.Path} {
 		if _, ok := pushDeliveryIdentities[id]; ok {
+			named = true
+			break
+		}
+	}
+	if !named {
+		return false
+	}
+	info, err := aconn.GetAppInfo(proc.UserID)
+	if err != nil {
+		return false
+	}
+	return trustedPushApp(info)
+}
+
+// trustedPushApp reports whether an app with a push service name really is
+// one: part of the system image, or signed by Google.
+func trustedPushApp(info *aconn.AppInfo) bool {
+	if info == nil {
+		return false
+	}
+	if info.SystemApp {
+		return true
+	}
+	for _, digest := range googlePushSigners {
+		if info.SignedBySameDeveloper(digest) {
 			return true
 		}
 	}
