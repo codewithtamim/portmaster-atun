@@ -91,6 +91,18 @@ func TestParseProfileRejects(t *testing.T) {
 		{"no default route", validProfile(`["0.0.0.0/0", "::/0"]`, `["10.1.0.0/16"]`)},
 		{"single half route", validProfile(`["0.0.0.0/0", "::/0"]`, `["0.0.0.0/1"]`)},
 		{"route without address", validProfile(`["10.0.0.2/32", "fd00::2/128"]`, `["10.0.0.2/32"]`, `["0.0.0.0/0", "::/0"]`, `["::/0"]`)},
+		{"empty name", validProfile(`"name": "Test"`, `"name": ""`)},
+		{"blank name", validProfile(`"name": "Test"`, `"name": " \t\u00a0"`)},
+		{"missing name", validProfile(`"name": "Test",`, ``)},
+		{"long name", validProfile(`"name": "Test"`, `"name": "`+strings.Repeat("a", maxNameRunes+1)+`"`)},
+		{"long id", validProfile(`"id": "p1"`, `"id": "`+strings.Repeat("i", maxIDLen+1)+`"`)},
+		{"long endpoint", validProfile(`"vpn.example.com"`, `"`+strings.Repeat("a", maxEndpointLen+1)+`"`)},
+		{"too many addresses", validProfile(`["10.0.0.2/32", "fd00::2/128"]`, prefixList(maxAddresses+1))},
+		{"too many allowed ips", validProfile(`["0.0.0.0/0", "::/0"]`, `["0.0.0.0/0", `+strings.TrimPrefix(prefixList(maxAllowedIPs), "["))},
+		{"too many peers", validProfile(`"peers": [{`, `"peers": [`+strings.Repeat(extraPeer+",", maxPeers)+`{`)},
+		{"trailing document", validProfile() + `{"schema": 1}`},
+		{"trailing garbage", validProfile() + ` x`},
+		{"oversized document", validProfile(`"name": "Test"`, `"name": "Test", "mtu": 0`+strings.Repeat(" ", maxProfileDoc))},
 	}
 
 	for _, tc := range tests {
@@ -182,6 +194,62 @@ func TestCoversFamily(t *testing.T) {
 		}
 		if got := coversFamily(tc.in, false); got != tc.v6 {
 			t.Errorf("%s: v6 = %v, want %v", tc.name, got, tc.v6)
+		}
+	}
+}
+
+// extraPeer is a valid peer to pad a document with.
+var extraPeer = `{
+	"publicKey": "` + testKey(3) + `",
+	"allowedIps": ["0.0.0.0/0"],
+	"endpointHost": "203.0.113.1",
+	"endpointPort": 51820
+}`
+
+// prefixList returns a JSON list of n distinct /32 prefixes.
+func prefixList(n int) string {
+	items := make([]string, n)
+	for i := range items {
+		items[i] = fmt.Sprintf(`"10.%d.%d.1/32"`, i/256, i%256)
+	}
+	return "[" + strings.Join(items, ", ") + "]"
+}
+
+func TestParseProfileLimitsAllowRealConfigs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		doc  string
+	}{
+		{"name at the cap", validProfile(`"name": "Test"`, `"name": "`+strings.Repeat("\u00e9", maxNameRunes)+`"`)},
+		{"emoji name", validProfile(`"name": "Test"`, `"name": "\ud83c\udde6\ud83c\uddf9 Vienna"`)},
+		{"padded name", validProfile(`"name": "Test"`, `"name": " Test "`)},
+		{"many allowed ips", validProfile(`["0.0.0.0/0", "::/0"]`, `["0.0.0.0/0", `+strings.TrimPrefix(prefixList(maxAllowedIPs-1), "["))},
+		{"many peers", validProfile(`"peers": [{`, `"peers": [`+strings.Repeat(extraPeer+",", maxPeers-1)+`{`)},
+		{"trailing whitespace", validProfile() + "\n\t "},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := ParseProfile(tc.doc); err != nil {
+				t.Errorf("ParseProfile rejected a valid profile: %s", err)
+			}
+		})
+	}
+}
+
+func TestParseProfileLimitErrorsAreBadProfile(t *testing.T) {
+	t.Parallel()
+
+	for _, doc := range []string{
+		validProfile(`"name": "Test"`, `"name": "  "`),
+		validProfile() + `{}`,
+		strings.Repeat(" ", maxProfileDoc+1),
+	} {
+		if _, err := ParseProfile(doc); !errors.Is(err, ErrBadProfile) {
+			t.Errorf("error %v is not ErrBadProfile", err)
 		}
 	}
 }

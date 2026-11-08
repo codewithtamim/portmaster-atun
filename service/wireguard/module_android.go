@@ -86,8 +86,12 @@ func (w *WireGuard) Start() error {
 // Stop stops the module. The supervisor tears the device down as it exits.
 func (w *WireGuard) Stop() error { return nil }
 
-// prep registers the API endpoint and the runtime record. Called by New.
+// prep registers the config option, the API endpoint and the runtime record.
+// Called by New.
 func (w *WireGuard) prep() error {
+	if err := registerConfig(); err != nil {
+		return err
+	}
 	return w.registerAPI()
 }
 
@@ -139,6 +143,7 @@ func InstallProfile(doc string) error {
 	module.wanted = profile
 	module.profileLock.Unlock()
 
+	setConfigSelected(true)
 	log.Infof("wireguard: installed profile %q", profile.Name)
 	module.nudge()
 
@@ -155,6 +160,7 @@ func ClearProfile() error {
 	module.wanted = nil
 	module.profileLock.Unlock()
 
+	setConfigSelected(false)
 	log.Info("wireguard: cleared profile")
 	module.nudge()
 

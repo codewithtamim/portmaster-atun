@@ -54,11 +54,12 @@ func checkAlternateRouting(ctx context.Context, conn *network.Connection) bool {
 		return false
 	}
 
-	// No imported config is not a tunnel yet. Blocking the phone before
+	// No selected config is not a tunnel yet. Blocking the phone before
 	// the user has a file would look like a failure, and the routing
 	// screen shows a direct connection until one is imported. A selected
-	// config whose device is down still fails closed below.
-	if wireguard.Status().Profile.Name == "" {
+	// config still counts after an engine restart, before the app has
+	// installed its profile again, so that window fails closed below.
+	if !wireguard.WantsTunnel() {
 		return true
 	}
 

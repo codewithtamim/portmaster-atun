@@ -111,6 +111,10 @@ func (w *WireGuard) bringUp(ctx *mgr.WorkerCtx, profile *Profile) time.Duration 
 		return remaining
 	}
 
+	// startSession can block for the endpoint lookup. Show the profile as
+	// connecting meanwhile, not as down with no profile.
+	w.publish(&Snapshot{State: StateConnecting, Profile: profile.Meta()})
+
 	session, err := startSession(ctx.Ctx(), profile)
 	if err != nil {
 		w.failures++

@@ -6,9 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"strings"
+	"unicode/utf8"
 )
 
 // Profile limits and defaults.
@@ -27,6 +30,17 @@ const (
 	wireGuardOverhead = 80
 
 	keyLen = 32
+
+	// Size limits. The document comes from the app, but a bad one must not
+	// cost the engine memory or a slow parse. Each cap is far above any real
+	// config.
+	maxProfileDoc  = 64 << 10
+	maxNameRunes   = 256
+	maxIDLen       = 128
+	maxAddresses   = 16
+	maxPeers       = 64
+	maxAllowedIPs  = 1024
+	maxEndpointLen = 253
 )
 
 // Profile is an installed WireGuard configuration.
@@ -63,12 +77,20 @@ type Peer struct {
 
 // ParseProfile decodes and validates a profile document.
 func ParseProfile(doc string) (*Profile, error) {
+	if len(doc) > maxProfileDoc {
+		return nil, fmt.Errorf("%w: document is %d bytes, max %d", ErrBadProfile, len(doc), maxProfileDoc)
+	}
+
 	var p Profile
 	dec := json.NewDecoder(strings.NewReader(doc))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&p)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrBadProfile, err)
+	}
+	// Exactly one document. Anything after it is a broken or spliced payload.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: data after the document", ErrBadProfile)
 	}
 	err = p.Validate()
 	if err != nil {
@@ -83,12 +105,26 @@ func (p *Profile) Validate() error {
 	if p.Schema != profileSchema {
 		return fmt.Errorf("%w: schema %d, want %d", ErrBadProfile, p.Schema, profileSchema)
 	}
+	// The name is what the firewall and the app show as the active config, so
+	// a blank one would look like no config at all.
+	if strings.TrimSpace(p.Name) == "" {
+		return fmt.Errorf("%w: no name", ErrBadProfile)
+	}
+	if utf8.RuneCountInString(p.Name) > maxNameRunes {
+		return fmt.Errorf("%w: name is longer than %d characters", ErrBadProfile, maxNameRunes)
+	}
+	if len(p.ID) > maxIDLen {
+		return fmt.Errorf("%w: id is longer than %d bytes", ErrBadProfile, maxIDLen)
+	}
 	err := checkKey("private key", p.PrivateKey)
 	if err != nil {
 		return err
 	}
 	if len(p.Addresses) == 0 {
 		return fmt.Errorf("%w: no interface address", ErrBadProfile)
+	}
+	if len(p.Addresses) > maxAddresses {
+		return fmt.Errorf("%w: more than %d interface addresses", ErrBadProfile, maxAddresses)
 	}
 	for _, addr := range p.Addresses {
 		if !addr.IsValid() {
@@ -97,6 +133,9 @@ func (p *Profile) Validate() error {
 	}
 	if len(p.Peers) == 0 {
 		return fmt.Errorf("%w: no peers", ErrBadProfile)
+	}
+	if len(p.Peers) > maxPeers {
+		return fmt.Errorf("%w: more than %d peers", ErrBadProfile, maxPeers)
 	}
 
 	allowed, err := p.validatePeers()
@@ -144,8 +183,14 @@ func (p *Profile) validatePeers() ([]netip.Prefix, error) {
 		if peer.EndpointHost == "" || peer.EndpointPort == 0 {
 			return nil, fmt.Errorf("%w: peer has no endpoint", ErrBadProfile)
 		}
+		if len(peer.EndpointHost) > maxEndpointLen {
+			return nil, fmt.Errorf("%w: peer endpoint is longer than %d bytes", ErrBadProfile, maxEndpointLen)
+		}
 		if len(peer.AllowedIPs) == 0 {
 			return nil, fmt.Errorf("%w: peer has no allowed ips", ErrBadProfile)
+		}
+		if len(peer.AllowedIPs) > maxAllowedIPs {
+			return nil, fmt.Errorf("%w: peer has more than %d allowed ips", ErrBadProfile, maxAllowedIPs)
 		}
 		for _, prefix := range peer.AllowedIPs {
 			if !prefix.IsValid() {

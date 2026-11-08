@@ -23,10 +23,37 @@ const (
 	resolveAttempts = 10
 	resolveInterval = time.Second
 	resolveTimeout  = 5 * time.Second
+
+	// protectedLookupTimeout is the protected lookup's share of resolveTimeout.
+	protectedLookupTimeout = 3 * time.Second
 )
 
-// lookupFn is swapped in tests.
-var lookupFn = lookupViaNameserver
+// The lookups are swapped in tests.
+var (
+	lookupFn          = lookupEndpoint
+	protectedLookupFn = lookupProtected
+	nameserverLookup  = lookupViaNameserver
+)
+
+// lookupEndpoint resolves an endpoint name on a protected path first. Only
+// when that fails, for example because no configured server has an IP, does
+// it ask Portmaster's nameserver, which works while traffic may go direct.
+//
+// The protected path gets part of the time only, so a network that drops its
+// packets still leaves the fallback time to answer from the cache.
+func lookupEndpoint(ctx context.Context, host string) ([]net.IP, error) {
+	protectedCtx, cancel := context.WithTimeout(ctx, protectedLookupTimeout)
+	ips, protectedErr := protectedLookupFn(protectedCtx, host)
+	cancel()
+	if protectedErr == nil {
+		return ips, nil
+	}
+	ips, err := nameserverLookup(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("protected lookup: %w; nameserver: %w", protectedErr, err)
+	}
+	return ips, nil
+}
 
 // resolveEndpoints resolves every peer endpoint.
 //
@@ -114,10 +141,12 @@ func preferIPv4(ips []net.IP) (netip.Addr, error) {
 }
 
 // lookupViaNameserver resolves through Portmaster's own resolver, so the lookup
-// is filtered and logged like any other.
+// is filtered and logged like any other. It is the fallback: the resolver's
+// own queries follow the routing target, so with lockdown on they are blocked
+// until the tunnel is up, and only a cached answer gets through.
 //
-// The dialer is explicitly protected: this lookup bootstraps the tunnel, so it
-// must never be routed through the tunnel it is about to bring up.
+// The dialer to the local nameserver is protected so the query never enters
+// the tunnel it is about to bring up.
 func lookupViaNameserver(ctx context.Context, host string) ([]net.IP, error) {
 	resolver := &net.Resolver{
 		PreferGo: true,
