@@ -3,6 +3,7 @@
 package updates
 
 import (
+	"context"
 	"io"
 	"net/http"
 )
@@ -18,6 +19,8 @@ func (u *Updater) endProgress(error) {}
 func (d *Downloader) resumeRequest(*http.Request, string) int64 { return 0 }
 
 func (d *Downloader) resumeRefused(*http.Response, string, int64) bool { return false }
+
+func downloadFromStart(ctx context.Context) context.Context { return ctx }
 
 func (d *Downloader) readBody(resp *http.Response, _ string, _ int64) ([]byte, error) {
 	return io.ReadAll(resp.Body)

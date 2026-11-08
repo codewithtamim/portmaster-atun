@@ -120,6 +120,7 @@ func (u *Updater) beginProgress() {
 	u.requiredBytes.Store(0)
 	u.listChecksAtBegin.Store(u.listChecksFinished.Load())
 	u.progressState.Store(ProgressChecking)
+	u.prunePartialDownloads()
 }
 
 // noteStorageShortfall records how many bytes the unpack needed when the
@@ -179,6 +180,7 @@ func (u *Updater) endProgress(err error) {
 
 	switch {
 	case err == nil:
+		u.clearPartialDownloads()
 		u.endAppliedUpdate()
 	case errors.Is(err, ErrSameIndex), errors.Is(err, ErrNoUpdateAvailable), errors.Is(err, ErrActionRequired):
 		if u.cacheActive.Load() {

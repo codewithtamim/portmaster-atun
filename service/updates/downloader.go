@@ -241,7 +241,8 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if d.resumeRefused(resp, url, offset) {
-		return d.downloadData(ctx, url)
+		// Retried once: the retry does not ask for a range.
+		return d.downloadData(downloadFromStart(ctx), url)
 	}
 
 	// Check for HTTP status errors.

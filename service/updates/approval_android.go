@@ -28,15 +28,42 @@ func intelProgressMetered() bool {
 // This is a background check the user did not ask for, so a failed fetch leaves
 // the state alone: nothing was being downloaded, and the installed lists are
 // still fine. It also yields to a user's request, which reports its own state.
+//
+// Broken installed files are the exception. When the server still offers the
+// installed version, they are reinstalled from the index just saved, without
+// approval: nothing new is installed. Otherwise the state reports the failure
+// instead of ready.
 func (u *Updater) stageIntelForApproval(w *mgr.WorkerCtx) error {
+	repair, err := u.stageIntel(w)
+	if err != nil || !repair {
+		return err
+	}
+
+	log.Warningf("updates/%s: repairing corrupted files", u.cfg.Name)
+	// No index URLs: the index saved by stageIntel is installed again.
+	if err := u.updateAndUpgrade(w, nil, false, true); err != nil {
+		log.Warningf("updates/%s: repair failed: %s", u.cfg.Name, err)
+	}
+	// Not returned: a failed repair waits for the next check, and the state
+	// already shows it.
+	return nil
+}
+
+// stageIntel does the check of stageIntelForApproval under the update lock.
+// It reports true when the installed files must be repaired.
+func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair bool, err error) {
 	if u.forcePending.Load() || !u.isUpdateRunning.SetToIf(false, true) {
-		return nil
+		return false, nil
 	}
 	defer u.isUpdateRunning.UnSet()
 
+	corrupted := u.corruptedInstallation != nil
 	downloader := NewDownloader(u, u.getIndexURLsWithLock())
 	if err := downloader.updateIndex(w.Ctx()); err != nil {
-		return fmt.Errorf("stage intel index: %w", err)
+		if corrupted {
+			u.setStagedState(ProgressFailed)
+		}
+		return false, fmt.Errorf("stage intel index: %w", err)
 	}
 
 	u.indexLock.Lock()
@@ -46,24 +73,40 @@ func (u *Updater) stageIntelForApproval(w *mgr.WorkerCtx) error {
 		// Any refusal counts as nothing to approve: updateAndUpgrade applies
 		// this same check, so the approved download would not happen anyway.
 		if err := current.ShouldUpgradeTo(downloader.index); err != nil {
-			if !errors.Is(err, ErrSameIndex) {
+			switch {
+			case corrupted && errors.Is(err, ErrSameIndex) && sameIndexVersion(current, downloader.index):
+				return true, nil
+			case corrupted:
+				log.Warningf("updates/%s: cannot repair corrupted files: %s", u.cfg.Name, err)
+				u.setStagedState(ProgressFailed)
+				return false, nil
+			case !errors.Is(err, ErrSameIndex):
 				log.Warningf("updates/%s: not offering update: %s", u.cfg.Name, err)
 			}
 			u.setStagedState(ProgressReady)
-			return nil
+			return false, nil
 		}
 	}
 
 	total := pendingArtifactBytes(w.Ctx(), downloader.index)
 	if u.forcePending.Load() {
-		return nil
+		return false, nil
 	}
 	u.downloadedBytes.Store(0)
 	u.totalBytes.Store(total)
 	u.totalStaged.Store(true)
 	u.setStagedState(ProgressAwaitingApproval)
 	log.Infof("updates/%s: waiting for approval of %d bytes", u.cfg.Name, total)
-	return nil
+	return false, nil
+}
+
+// sameIndexVersion reports whether both indexes are the same release.
+// ErrSameIndex alone also covers an older index served from a stale cache. An
+// index rebuilt from the installed files has no real publish date.
+func sameIndexVersion(current, fetched *Index) bool {
+	return current.Name == fetched.Name && current.versionNum != nil && fetched.versionNum != nil &&
+		current.versionNum.Equal(fetched.versionNum) &&
+		(current.isLocallyGenerated || current.Published.Equal(fetched.Published))
 }
 
 // setStagedState reports a background check's result, unless newer work owns
