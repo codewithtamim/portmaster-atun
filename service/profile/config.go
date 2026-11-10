@@ -604,7 +604,7 @@ Pro Tip: You can use "#" to add a comment to a rule.
 		Description:    "Reject private IP addresses (RFC1918 et al.) from public DNS responses. If the system resolver is in use, the resulting connection will be blocked instead of the DNS request.",
 		OptType:        config.OptTypeBool,
 		ExpertiseLevel: config.ExpertiseLevelDeveloper,
-		DefaultValue:   true,
+		DefaultValue:   removeOutOfScopeDNSDefault(),
 		Annotations: config.Annotations{
 			config.SettablePerAppAnnotation: true,
 			config.DisplayHintAnnotation:    status.DisplayHintSecurityLevel,
@@ -616,7 +616,7 @@ Pro Tip: You can use "#" to add a comment to a rule.
 	if err != nil {
 		return err
 	}
-	cfgOptionRemoveOutOfScopeDNS = config.Concurrent.GetAsBool(CfgOptionRemoveOutOfScopeDNSKey, true)
+	cfgOptionRemoveOutOfScopeDNS = config.Concurrent.GetAsBool(CfgOptionRemoveOutOfScopeDNSKey, removeOutOfScopeDNSDefault())
 	cfgBoolOptions[CfgOptionRemoveOutOfScopeDNSKey] = cfgOptionRemoveOutOfScopeDNS
 
 	// Filter DNS Records that would be blocked

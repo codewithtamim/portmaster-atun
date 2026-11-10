@@ -79,6 +79,13 @@ func registerAndroidDevicePolicyOptions() error {
 // secure DNS". Desktop keeps the option on; see config_default.go.
 func preventBypassingDefault() bool { return false }
 
+// removeOutOfScopeDNSDefault is off on Android: local-network traffic stays
+// outside the tunnel, so public names that point at LAN addresses
+// (plex.direct, nip.io, router and NAS apps) must resolve. The app states
+// that it lacks desktop's DNS-rebinding protection rather than enforcing it.
+// An explicit user value still wins.
+func removeOutOfScopeDNSDefault() bool { return false }
+
 func applyAndroidDevicePolicyOptions(lp *LayeredProfile) {
 	lp.BlockOnMobile = lp.wrapBoolOption(
 		CfgOptionBlockOnMobileKey,
