@@ -135,19 +135,54 @@ func relayUDPDNS(appConn, upstream net.Conn) error {
 			}
 			return err
 		}
+		// Kept to size the reply: the nameserver writes the whole answer,
+		// since TCP queries reach it over the same UDP socket.
+		query := append([]byte(nil), buf[:n]...)
 		_ = upstream.SetDeadline(time.Now().Add(dnsIdleTimeout))
-		if _, err = upstream.Write(buf[:n]); err != nil {
+		if _, err = upstream.Write(query); err != nil {
 			return err
 		}
 		n, err = upstream.Read(buf)
 		if n <= 0 || err != nil {
 			return err
 		}
-		if _, err = appConn.Write(buf[:n]); err != nil {
+		if _, err = appConn.Write(fitUDPReply(query, buf[:n])); err != nil {
 			return err
 		}
 		waitForQuery = dnsLingerTimeout
 	}
+}
+
+// fitUDPReply trims a reply to the size the app can take over UDP: its EDNS
+// buffer, or 512 bytes without EDNS. A trimmed reply has TC set, so the app
+// asks again over TCP, where the full answer is sent. A reply that can't be
+// parsed is passed on unchanged.
+func fitUDPReply(query, reply []byte) []byte {
+	if len(reply) <= dns.MinMsgSize {
+		return reply
+	}
+	var q dns.Msg
+	if err := q.Unpack(query); err != nil {
+		return reply
+	}
+	size := dns.MinMsgSize
+	if opt := q.IsEdns0(); opt != nil && int(opt.UDPSize()) > size {
+		size = int(opt.UDPSize())
+	}
+	if len(reply) <= size {
+		return reply
+	}
+	var r dns.Msg
+	if err := r.Unpack(reply); err != nil {
+		return reply
+	}
+	r.Truncate(size)
+	packed, err := r.Pack()
+	if err != nil {
+		return reply
+	}
+
+	return packed
 }
 
 // handleTCPDNSFlow answers a TCP DNS session. Each length-prefixed query is
