@@ -50,6 +50,12 @@ func allowedLogToken(token string) bool {
 	return false
 }
 
+// RedactLogLine keeps only the allowlisted words of a log line, the same way
+// the shared report does.
+func RedactLogLine(line string) string {
+	return redactForReport(line)
+}
+
 // redactForReport keeps only allowlisted words of a log line, so the user can
 // share the report. Runs of removed words collapse into one marker.
 func redactForReport(line string) string {

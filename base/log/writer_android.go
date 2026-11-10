@@ -22,8 +22,25 @@ func init() {
 	androidLog = writeAndroidLog
 }
 
+// logcatFilter, when set, decides which lines reach logcat and how they read.
+var logcatFilter func(level Severity, text string) (string, bool)
+
+// SetLogcatFilter sets a filter for the lines written to logcat. Logcat is
+// readable by apps with log access and ends up in bug reports, so release
+// builds use this to keep user data such as domains and app names out of it.
+// Set it before logging starts. The in-memory logs are not affected.
+func SetLogcatFilter(filter func(level Severity, text string) (string, bool)) {
+	logcatFilter = filter
+}
+
 // writeAndroidLog writes a line to logcat with __android_log_write.
 func writeAndroidLog(level Severity, text string) {
+	if logcatFilter != nil {
+		var keep bool
+		if text, keep = logcatFilter(level, text); !keep {
+			return
+		}
+	}
 	var prio C.int
 	switch level {
 	case TraceLevel, DebugLevel:
