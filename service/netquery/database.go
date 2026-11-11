@@ -135,6 +135,7 @@ func New(dbPath string) (*Database, error) {
 
 	// Get file location of history database.
 	historyFile := filepath.Join(historyParentDir, "history.db")
+	repairHistoryFile(historyFile)
 	// Convert to SQLite URI path.
 	historyURI := "file:///" + strings.TrimPrefix(filepath.ToSlash(historyFile), "/")
 
