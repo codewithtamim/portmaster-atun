@@ -29,7 +29,13 @@ const (
 	// dnsLingerTimeout is how long a UDP DNS flow waits for another query
 	// after a reply. c-ares sends the A and AAAA queries on one socket.
 	dnsLingerTimeout = time.Second
+
+	// dnsQueryBufferSize holds any query sent over UDP: they are a few
+	// hundred bytes even with EDNS options and padding.
+	dnsQueryBufferSize = 4096
 )
+
+var errDNSQueryTooLarge = errors.New("atun: udp dns query too large")
 
 func isDNSPort(info pmpacket.Info) bool {
 	return info.DstPort == dnsPort
@@ -117,17 +123,16 @@ func handleDNSFlow(s *stackSession, f *flow, appConn net.Conn) {
 // a reply it waits only dnsLingerTimeout for another query, instead of
 // holding the flow for the idle timeout.
 func relayUDPDNS(appConn, upstream net.Conn) error {
-	bufp, ok := udpBufPool.Get().(*[]byte)
-	if !ok {
-		return nil
-	}
-	defer udpBufPool.Put(bufp)
-	buf := *bufp
+	// The flow keeps only this small buffer while it waits for a query. The
+	// full-size reply buffer is borrowed per lookup: holding one per flow cost
+	// 64 KiB for every lookup of the last second, hundreds of megabytes when
+	// an app sends thousands of lookups.
+	query := make([]byte, dnsQueryBufferSize)
 
 	waitForQuery := dnsIdleTimeout
 	for {
 		_ = appConn.SetReadDeadline(time.Now().Add(waitForQuery))
-		n, err := appConn.Read(buf)
+		n, err := appConn.Read(query)
 		if err != nil || n == 0 {
 			if waitForQuery == dnsLingerTimeout {
 				// A query was answered; the app sent no other one.
@@ -135,22 +140,39 @@ func relayUDPDNS(appConn, upstream net.Conn) error {
 			}
 			return err
 		}
-		// Kept to size the reply: the nameserver writes the whole answer,
-		// since TCP queries reach it over the same UDP socket.
-		query := append([]byte(nil), buf[:n]...)
+		if n == len(query) {
+			// Filled the buffer, so it may be cut off. No real query is this large.
+			return errDNSQueryTooLarge
+		}
 		_ = upstream.SetDeadline(time.Now().Add(dnsIdleTimeout))
-		if _, err = upstream.Write(query); err != nil {
+		if _, err = upstream.Write(query[:n]); err != nil {
 			return err
 		}
-		n, err = upstream.Read(buf)
-		if n <= 0 || err != nil {
-			return err
-		}
-		if _, err = appConn.Write(fitUDPReply(query, buf[:n])); err != nil {
+		if done, err := relayUDPDNSReply(appConn, upstream, query[:n]); done || err != nil {
 			return err
 		}
 		waitForQuery = dnsLingerTimeout
 	}
+}
+
+// relayUDPDNSReply passes the nameserver's answer to query on to the app. It
+// reports done when the nameserver sent nothing and the flow should end.
+func relayUDPDNSReply(appConn, upstream net.Conn, query []byte) (done bool, err error) {
+	bufp, ok := udpBufPool.Get().(*[]byte)
+	if !ok {
+		return true, nil
+	}
+	defer udpBufPool.Put(bufp)
+	buf := *bufp
+
+	// The nameserver writes the whole answer, since TCP queries reach it
+	// over the same UDP socket; fitUDPReply sizes it for this app.
+	n, err := upstream.Read(buf)
+	if n <= 0 || err != nil {
+		return true, err
+	}
+	_, err = appConn.Write(fitUDPReply(query, buf[:n]))
+	return false, err
 }
 
 // fitUDPReply trims a reply to the size the app can take over UDP: its EDNS
