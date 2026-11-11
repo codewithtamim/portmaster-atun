@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/safing/portmaster/base/utils/aconn"
 	"github.com/safing/portmaster/service/mgr"
 )
 
@@ -133,5 +134,85 @@ func TestStageWithCorruptedIntelAndNewerIndexWaitsForApproval(t *testing.T) {
 	}
 	if u.corruptedInstallation == nil {
 		t.Fatal("newer version installed without approval")
+	}
+}
+
+// newHealthyIntel returns an intel updater with intact installed lists at
+// version 1.0.0 and a server that offers the index in serveDir.
+func newHealthyIntel(t *testing.T, serveDir string) *Updater {
+	t.Helper()
+	installedDir := t.TempDir()
+	if err := GenerateMockFolder(installedDir, "Test", "1.0.0", testPublished); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.FileServer(http.Dir(serveDir)))
+	t.Cleanup(srv.Close)
+	setArtifactURLs(t, serveDir, srv.URL)
+
+	u, err := New(&testInstance{}, "Test", Config{
+		Name:              intelUpdaterName,
+		Directory:         installedDir,
+		DownloadDirectory: t.TempDir(),
+		PurgeDirectory:    t.TempDir(),
+		IndexFile:         "index.json",
+		AutoCheck:         true,
+		AutoDownload:      true,
+		AutoApply:         true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.corruptedInstallation != nil {
+		t.Fatalf("installed mock lists reported broken: %v", u.corruptedInstallation)
+	}
+	u.cfg.IndexURLs = []string{srv.URL + "/index.json"}
+	return u
+}
+
+func setMetered(t *testing.T, metered bool) {
+	t.Helper()
+	state := `{"metered":false}`
+	if metered {
+		state = `{"metered":true}`
+	}
+	if err := aconn.UpdateDeviceStateJSON(state); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = aconn.UpdateDeviceStateJSON(`{"metered":false}`) })
+}
+
+func TestStageDownloadsUpdateOnUnmeteredNetwork(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, false)
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state == ProgressAwaitingApproval {
+		t.Fatal("update on an unmetered network waited for approval")
+	}
+	if got := u.index.Version; got != "1.0.1" {
+		t.Fatalf("installed version %q, want 1.0.1", got)
+	}
+}
+
+func TestStageWaitsForApprovalOnMeteredNetwork(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, true)
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state != ProgressAwaitingApproval {
+		t.Fatalf("state %q, want %q", state, ProgressAwaitingApproval)
+	}
+	if got := u.index.Version; got != "1.0.0" {
+		t.Fatalf("installed version %q on a metered network, want 1.0.0", got)
 	}
 }

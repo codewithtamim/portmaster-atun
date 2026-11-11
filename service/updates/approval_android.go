@@ -23,7 +23,12 @@ func intelProgressMetered() bool {
 }
 
 // stageIntelForApproval fetches the index and reports its size.
-// Artifact bytes are downloaded only from the force-update API.
+//
+// When lists are already installed and intact and the network isn't metered,
+// the update is downloaded right away, as the force-update API would: lists
+// go stale otherwise, and only a first download (which may be large) or a
+// metered network needs the user's approval. Otherwise artifact bytes are
+// downloaded only from the force-update API.
 //
 // This is a background check the user did not ask for, so a failed fetch leaves
 // the state alone: nothing was being downloaded, and the installed lists are
@@ -34,9 +39,21 @@ func intelProgressMetered() bool {
 // approval: nothing new is installed. Otherwise the state reports the failure
 // instead of ready.
 func (u *Updater) stageIntelForApproval(w *mgr.WorkerCtx) error {
-	repair, err := u.stageIntel(w)
-	if err != nil || !repair {
+	repair, update, err := u.stageIntel(w)
+	if err != nil {
 		return err
+	}
+	if update {
+		log.Infof("updates/%s: downloading update on an unmetered network", u.cfg.Name)
+		err := u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+		if err != nil && !errors.Is(err, ErrSameIndex) && !errors.Is(err, ErrNoUpdateAvailable) {
+			// Not returned: the manager would retry at once; the next check retries.
+			log.Warningf("updates/%s: automatic update failed: %s", u.cfg.Name, err)
+		}
+		return nil
+	}
+	if !repair {
+		return nil
 	}
 
 	log.Warningf("updates/%s: repairing corrupted files", u.cfg.Name)
@@ -50,10 +67,11 @@ func (u *Updater) stageIntelForApproval(w *mgr.WorkerCtx) error {
 }
 
 // stageIntel does the check of stageIntelForApproval under the update lock.
-// It reports true when the installed files must be repaired.
-func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair bool, err error) {
+// It reports whether the installed files must be repaired, and whether the
+// staged update may be downloaded without asking.
+func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) {
 	if u.forcePending.Load() || !u.isUpdateRunning.SetToIf(false, true) {
-		return false, nil
+		return false, false, nil
 	}
 	defer u.isUpdateRunning.UnSet()
 
@@ -63,7 +81,7 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair bool, err error) {
 		if corrupted {
 			u.setStagedState(ProgressFailed)
 		}
-		return false, fmt.Errorf("stage intel index: %w", err)
+		return false, false, fmt.Errorf("stage intel index: %w", err)
 	}
 
 	u.indexLock.Lock()
@@ -75,29 +93,33 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair bool, err error) {
 		if err := current.ShouldUpgradeTo(downloader.index); err != nil {
 			switch {
 			case corrupted && errors.Is(err, ErrSameIndex) && sameIndexVersion(current, downloader.index):
-				return true, nil
+				return true, false, nil
 			case corrupted:
 				log.Warningf("updates/%s: cannot repair corrupted files: %s", u.cfg.Name, err)
 				u.setStagedState(ProgressFailed)
-				return false, nil
+				return false, false, nil
 			case !errors.Is(err, ErrSameIndex):
 				log.Warningf("updates/%s: not offering update: %s", u.cfg.Name, err)
 			}
 			u.setStagedState(ProgressReady)
-			return false, nil
+			return false, false, nil
 		}
+	}
+
+	if current != nil && !corrupted && !intelProgressMetered() {
+		return false, true, nil
 	}
 
 	total := pendingArtifactBytes(w.Ctx(), downloader.index)
 	if u.forcePending.Load() {
-		return false, nil
+		return false, false, nil
 	}
 	u.downloadedBytes.Store(0)
 	u.totalBytes.Store(total)
 	u.totalStaged.Store(true)
 	u.setStagedState(ProgressAwaitingApproval)
 	log.Infof("updates/%s: waiting for approval of %d bytes", u.cfg.Name, total)
-	return false, nil
+	return false, false, nil
 }
 
 // sameIndexVersion reports whether both indexes are the same release.
