@@ -233,6 +233,7 @@ func (nq *NetQuery) Start() error {
 					log.Tracef("netquery: successfully removed %d old connections from live db that ended before %s", count, threshold)
 					// Android only: end rows whose end update was lost.
 					reconcileActive(ctx.Ctx(), nq.Store)
+					trimLiveDB(ctx.Ctx(), nq.Store)
 					compactLiveDB(ctx.Ctx(), nq.Store)
 				}
 			}

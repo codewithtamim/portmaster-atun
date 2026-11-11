@@ -141,6 +141,9 @@ func cleanConnections() (activePIDs map[int]struct{}) {
 		// rerouted dns requests
 		cleanDNSRequestConnections()
 
+		// Android only: cap what a flood keeps in memory.
+		trimEndedConnections(now)
+
 		return nil
 	})
 
