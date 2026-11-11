@@ -10,10 +10,10 @@ import (
 	"github.com/safing/portmaster/base/log"
 )
 
-// localDNSHosts are the current network's own DNS servers on private
-// addresses, usually the home router. Local traffic stays outside the
-// tunnel, except that the VpnService routes these addresses in so their port
-// 53 can be filtered like any other resolver. Everything else sent to them
+// localDNSHosts are the current network's own DNS servers and default
+// gateway on private addresses, usually the home router. Local traffic stays
+// outside the tunnel, except that the VpnService routes these addresses in so
+// their port 53 can be filtered like any other resolver. Everything else sent to them
 // (the router's admin page, UPnP, casting helpers) is local traffic and is
 // passed through without a firewall decision, as if it never entered the
 // tunnel.
