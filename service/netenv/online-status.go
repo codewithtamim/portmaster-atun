@@ -189,7 +189,12 @@ func CheckAndGetOnlineStatus() OnlineStatus {
 	return GetOnlineStatus()
 }
 
+// dnsCheckFailedComment marks the offline status that comes only from the
+// DNS check failing; the platform may know better whether the network works.
+const dnsCheckFailedComment = "dns query check failed"
+
 func updateOnlineStatus(status OnlineStatus, portalURL *url.URL, comment string) {
+	platformOnlineStatusUpdated(status, comment == dnsCheckFailedComment)
 	changed := false
 
 	// Update online status.
@@ -543,6 +548,6 @@ func checkOnlineStatus(ctx context.Context) {
 		updateOnlineStatus(StatusOnline, nil, "all checks passed, dns query check response was empty")
 	default:
 		log.Warningf("netenv: dns query check failed: %s", err)
-		updateOnlineStatus(StatusOffline, nil, "dns query check failed")
+		updateOnlineStatus(StatusOffline, nil, dnsCheckFailedComment)
 	}
 }

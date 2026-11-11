@@ -2,7 +2,11 @@
 
 package netenv
 
-import "time"
+import (
+	"time"
+
+	"github.com/safing/portmaster/base/utils/anotif"
+)
 
 // getDynamicStatusTrigger is upstream's, except for a portal or limited
 // network. Upstream probes those every 5 seconds, because nothing else would
@@ -43,5 +47,23 @@ func statusCheckInterval(status OnlineStatus) (time.Duration, bool) {
 		fallthrough
 	default:
 		return 5 * time.Minute, true
+	}
+}
+
+// DNSCheckFailedEventID is the anotif event the app gets while the engine
+// counts the device as offline only because its DNS check fails. With a
+// single unreachable DNS server that check can never pass, so the engine
+// stays "offline" and its failing-server warning never fires. The app knows
+// whether Android validated the network and decides from that what to show.
+const DNSCheckFailedEventID = "netenv:dns-check-failed"
+
+func platformOnlineStatusUpdated(status OnlineStatus, dnsCheckFailed bool) {
+	if status == StatusOffline && dnsCheckFailed {
+		anotif.Deliver(DNSCheckFailedEventID, "DNS check failed", "The DNS check failed.")
+		return
+	}
+	// Called on every status update, so only call into the app on a change.
+	if anotif.AlreadyDelivered(DNSCheckFailedEventID) {
+		anotif.Retract(DNSCheckFailedEventID)
 	}
 }

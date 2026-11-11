@@ -207,6 +207,7 @@ func notifyAboutFailingResolvers() {
 	failingResolverNotificationLock.Lock()
 	defer failingResolverNotificationLock.Unlock()
 	failingResolverNotificationSet.Set()
+	platformNotifyFailingResolvers()
 
 	// Check if already set.
 	if failingResolverNotification != nil {
@@ -250,6 +251,7 @@ func resetFailingResolversNotification() {
 
 	failingResolverNotificationLock.Lock()
 	defer failingResolverNotificationLock.Unlock()
+	platformResetFailingResolvers()
 
 	// Remove the notification.
 	if failingResolverNotification != nil {

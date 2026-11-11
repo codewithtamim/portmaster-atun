@@ -24,3 +24,5 @@ func getDynamicStatusTrigger() <-chan time.Time {
 		return time.After(5 * time.Minute)
 	}
 }
+
+func platformOnlineStatusUpdated(_ OnlineStatus, _ bool) {}
