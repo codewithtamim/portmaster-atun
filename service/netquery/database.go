@@ -311,6 +311,7 @@ func (db *Database) ApplyMigrations() error {
 			`CREATE INDEX IF NOT EXISTS %sstarted_time_index ON %s (strftime('%%s', started)+0)`,
 			`CREATE INDEX IF NOT EXISTS %sstarted_ended_time_index ON %s (strftime('%%s', started)+0, strftime('%%s', ended)+0) WHERE ended IS NOT NULL`,
 		}
+		indexes = append(indexes, platformIndexes()...)
 		for _, idx := range indexes {
 			name := ""
 			if dbName != "" {

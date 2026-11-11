@@ -91,12 +91,14 @@ func (req *QueryRequestPayload) generateSQL(ctx context.Context, schema *orm.Tab
 		req.Databases = []DatabaseName{LiveDatabase}
 	}
 
-	sources := make([]string, len(req.Databases))
-	for idx, db := range req.Databases {
-		sources[idx] = fmt.Sprintf("SELECT * FROM %s.connections %s", db, whereClause)
+	source := platformSource(req.Databases, whereClause)
+	if source == "" {
+		sources := make([]string, len(req.Databases))
+		for idx, db := range req.Databases {
+			sources[idx] = fmt.Sprintf("SELECT * FROM %s.connections %s", db, whereClause)
+		}
+		source = strings.Join(sources, " UNION ")
 	}
-
-	source := strings.Join(sources, " UNION ")
 
 	query := `SELECT ` + selectClause + ` FROM ( ` + source + ` ) `
 
