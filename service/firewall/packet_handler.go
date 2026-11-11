@@ -125,7 +125,7 @@ func resetConnectionVerdict(ctx context.Context, conn *network.Connection) (verd
 	defer conn.Unlock()
 
 	// Do not re-evaluate connection that have already ended.
-	if conn.Ended > 0 {
+	if conn.Ended > 0 && !reevaluateEnded(conn) {
 		return false
 	}
 
