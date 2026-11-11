@@ -112,7 +112,7 @@ type Entity struct { //nolint:maligned
 func (e *Entity) Init(dstPort uint16) *Entity {
 	// Get IP scope.
 	if e.IP != nil {
-		e.IPScope = netutils.GetIPScope(e.IP)
+		e.IPScope = netutils.GetIPScope(e.MatchIP())
 	} else {
 		e.IPScope = netutils.Undefined
 	}
@@ -241,7 +241,7 @@ func (e *Entity) GetIP() (net.IP, bool) {
 	if e.IP == nil {
 		return nil, false
 	}
-	return e.IP, true
+	return e.MatchIP(), true
 }
 
 // Location
@@ -254,7 +254,7 @@ func (e *Entity) getLocation(ctx context.Context) {
 		}
 
 		// get location data
-		loc, err := geoip.GetLocation(e.IP)
+		loc, err := geoip.GetLocation(e.MatchIP())
 		if err != nil {
 			log.Tracer(ctx).Warningf("intel: failed to get location data for %s: %s", e.IP, err)
 			e.LocationError = err.Error()

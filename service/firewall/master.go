@@ -638,7 +638,7 @@ func checkCustomFilterList(_ context.Context, conn *network.Connection, p *profi
 
 	// block if ip addresses appears in the custom filter list
 	if conn.Entity.IP != nil {
-		if customlists.LookupIP(conn.Entity.IP) {
+		if customlists.LookupIP(conn.Entity.MatchIP()) {
 			conn.Deny("IP address is in the custom filter list", customlists.CfgOptionCustomListFileKey)
 			return true
 		}

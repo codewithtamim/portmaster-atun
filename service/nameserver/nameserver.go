@@ -322,6 +322,7 @@ func handleRequest(ctx context.Context, w dns.ResponseWriter, request *dns.Msg) 
 	// Check with firewall again after resolving.
 	tracer.Trace("nameserver: deciding on resolved dns")
 	rrCache = firewall.FilterResolvedDNS(ctx, conn, q, rrCache)
+	rrCache = synthesizeAAAA(ctx, conn, q, rrCache)
 
 	// Check again if there is a responder from the firewall.
 	if responder, ok := conn.Reason.Context.(nsutil.Responder); ok {

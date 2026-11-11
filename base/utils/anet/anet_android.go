@@ -166,6 +166,7 @@ func UpdateInterfacesJSON(jsonStr string) error {
 		log.Warningf("anet: failed to parse interfaces JSON: %s", err)
 		return err
 	}
+	storeNat64(jsonStr)
 	UpdateInterfaces(list)
 	return nil
 }
@@ -179,6 +180,7 @@ func Interfaces() ([]net.Interface, error) {
 		var list []NetworkInterface
 		err := json.Unmarshal([]byte(jsonStr), &list)
 		if err == nil {
+			storeNat64(jsonStr)
 			ifaces, _ := updateCache(list)
 			out := make([]net.Interface, len(ifaces))
 			copy(out, ifaces)

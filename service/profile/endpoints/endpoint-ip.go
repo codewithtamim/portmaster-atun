@@ -20,7 +20,7 @@ func (ep *EndpointIP) Matches(_ context.Context, entity *intel.Entity) (EPResult
 		return NoMatch, nil
 	}
 
-	if ep.IP.Equal(entity.IP) {
+	if ep.IP.Equal(entity.MatchIP()) {
 		return ep.match(ep, entity, ep.IP.String(), "IP matches")
 	}
 	return NoMatch, nil

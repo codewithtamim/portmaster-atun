@@ -20,7 +20,7 @@ func (ep *EndpointIPRange) Matches(_ context.Context, entity *intel.Entity) (EPR
 		return NoMatch, nil
 	}
 
-	if ep.Net.Contains(entity.IP) {
+	if ep.Net.Contains(entity.MatchIP()) {
 		return ep.match(ep, entity, ep.Net.String(), "IP is in")
 	}
 	return NoMatch, nil
