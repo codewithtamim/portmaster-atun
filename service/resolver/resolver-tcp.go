@@ -262,6 +262,7 @@ func (tr *TCPResolver) Query(ctx context.Context, q *Query) (*RRCache, error) {
 	case <-module.mgr.Done():
 		return nil, ErrShuttingDown
 	case <-time.After(defaultRequestTimeout):
+		tr.tcpReplyTimedOut(resolverConn)
 		return nil, ErrTimeout
 	}
 
@@ -360,6 +361,7 @@ func (trc *tcpResolverConn) shutdown() {
 	// Set abandoned status and close connection to the DNS server.
 	trc.abandoned.Set()
 	_ = trc.conn.Close()
+	forgetTCPConn(trc)
 
 	// Close all response channels for in-flight queries.
 	for _, tq := range trc.inFlightQueries {
@@ -521,6 +523,7 @@ func (trc *tcpResolverConn) reader(workerCtx *mgr.WorkerCtx) error {
 			trc.logConnectionError(err, true)
 			return nil
 		}
+		noteTCPRead(trc)
 		trc.responses <- msg
 	}
 }
