@@ -162,15 +162,39 @@ func GetAppInfo(uid int) (*AppInfo, error) {
 }
 
 // InvalidateAppInfo drops the cached answer for uid, or every answer when uid
-// is negative.
+// is negative. The app calls it when a package is installed, updated or
+// removed; for a single uid the registered handler then runs in the
+// background.
 func InvalidateAppInfo(uid int) {
 	appInfoCacheMu.Lock()
-	defer appInfoCacheMu.Unlock()
 	if uid < 0 {
 		clear(appInfoCache)
+		appInfoCacheMu.Unlock()
 		return
 	}
 	delete(appInfoCache, uid)
+	appInfoCacheMu.Unlock()
+
+	appInfoChangedMu.RLock()
+	fn := appInfoChanged
+	appInfoChangedMu.RUnlock()
+	if fn != nil {
+		go fn(uid)
+	}
+}
+
+var (
+	appInfoChangedMu sync.RWMutex
+	appInfoChanged   func(uid int)
+)
+
+// SetOnAppInfoChanged registers the callback run after the app of uid was
+// installed, updated or removed. The profile module uses it to check the
+// app's signer at install time instead of at its first connection.
+func SetOnAppInfoChanged(fn func(uid int)) {
+	appInfoChangedMu.Lock()
+	appInfoChanged = fn
+	appInfoChangedMu.Unlock()
 }
 
 func cacheAppInfo(uid int, info *AppInfo, err error, ttl time.Duration) {

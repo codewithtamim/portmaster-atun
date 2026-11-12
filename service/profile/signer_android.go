@@ -152,3 +152,59 @@ func CleanAndroidProfileName(p *Profile) error {
 	}
 	return renameProfile(p, clean)
 }
+
+// Lookups used by checkSignerOnInstall, replaceable in tests.
+var (
+	appInfoForUID        = aconn.GetAppInfo
+	profileForPackage    = findProfileByAndroidPackage
+	createPackageProfile = ensureAndroidPackageProfile
+)
+
+func init() {
+	aconn.SetOnAppInfoChanged(checkSignerOnInstall)
+}
+
+// checkSignerOnInstall runs the signer check when an app is installed or
+// updated, not only at its first connection. Otherwise the settings kept for
+// an uninstalled app stay visible for a reinstalled app from a different
+// developer until it connects, and an app that never connected has no signer
+// on record to compare against. A removed app has no app info and is skipped.
+// Clones and shared user IDs keep their check at connection time.
+func checkSignerOnInstall(uid int) {
+	info, err := appInfoForUID(uid)
+	if err != nil || info == nil || info.PackageName == "" || info.SharedUserID != "" || info.AndroidUser != 0 {
+		return
+	}
+	// A new app gets its profile now, so its signer is on record before the
+	// user sets anything for it.
+	if profileForPackage(info.PackageName) == nil {
+		if _, err := createPackageProfile(info.PackageName, aconn.SafeLabel(info.Label)); err != nil {
+			log.Warningf("profile: failed to create profile for %s at install: %s", info.PackageName, err)
+			return
+		}
+	}
+	checkSigner(info)
+}
+
+// checkSignerForPackage records or checks the signer when the app ensures a
+// package profile and knows the app's uid. It covers apps installed before
+// Portmaster, whose profiles are created without an install event.
+func checkSignerForPackage(packageName string, uid int) {
+	info, err := appInfoForUID(uid)
+	if err != nil || info == nil || info.PackageName != packageName || info.SharedUserID != "" || info.AndroidUser != 0 {
+		return
+	}
+	checkSigner(info)
+}
+
+func checkSigner(info *aconn.AppInfo) {
+	ensureProfileMu.Lock()
+	p := profileForPackage(info.PackageName)
+	ensureProfileMu.Unlock()
+	if p == nil {
+		return
+	}
+	if _, err := CheckAndroidSigner(p, info); err != nil {
+		log.Warningf("profile: signer check for %s: %s", p.ScopedID(), err)
+	}
+}

@@ -81,6 +81,9 @@ type profileEnsureBody struct {
 	Name         string   `json:"name"`
 	SharedUserID string   `json:"sharedUserId"`
 	Members      []string `json:"members"`
+	// UID is the app's uid. When set, the signer is recorded or checked
+	// as the profile is ensured, before the app ever connects.
+	UID int `json:"uid"`
 }
 
 // HistorySettingsSnapshot is GET/PUT /v1/history/settings.
@@ -210,7 +213,14 @@ func handleEnsureProfile(ar *api.Request) (interface{}, error) {
 	if sharedUserID != "" {
 		return EnsureSharedAndroidProfile(sharedUserID, name, body.Members)
 	}
-	return ensureAndroidPackageProfile(packageName, name)
+	snapshot, err := ensureAndroidPackageProfile(packageName, name)
+	if err != nil {
+		return snapshot, err
+	}
+	if body.UID > 0 {
+		checkSignerForPackage(packageName, body.UID)
+	}
+	return snapshot, nil
 }
 
 func handleHistorySettings(ar *api.Request) (interface{}, error) {
