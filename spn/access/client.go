@@ -315,7 +315,9 @@ func Logout(shallow, purge bool) error {
 		}
 
 		// Disable SPN when the user logs out directly.
-		disableSPN()
+		if logoutDisablesSPN() {
+			disableSPN()
+		}
 
 		log.Info("spn/access: logged out and purged data")
 		return nil
@@ -363,7 +365,9 @@ func Logout(shallow, purge bool) error {
 		log.Info("spn/access: logged out")
 
 		// Disable SPN when the user logs out directly.
-		disableSPN()
+		if logoutDisablesSPN() {
+			disableSPN()
+		}
 	}
 
 	return nil

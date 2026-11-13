@@ -31,8 +31,9 @@ func intelProgressMetered() bool {
 // downloaded only from the force-update API.
 //
 // This is a background check the user did not ask for, so a failed fetch leaves
-// the state alone: nothing was being downloaded, and the installed lists are
-// still fine. It also yields to a user's request, which reports its own state.
+// the state alone while lists are installed: nothing was being downloaded, and
+// the installed lists are still fine. Without installed lists the failure is
+// reported, since nothing is filtered until a download succeeds. It also yields to a user's request, which reports its own state.
 //
 // Broken installed files are the exception. When the server still offers the
 // installed version, they are reinstalled from the index just saved, without
@@ -76,9 +77,14 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 	defer u.isUpdateRunning.UnSet()
 
 	corrupted := u.corruptedInstallation != nil
+	u.indexLock.Lock()
+	installed := u.index != nil && len(u.index.Artifacts) > 0
+	u.indexLock.Unlock()
 	downloader := NewDownloader(u, u.getIndexURLsWithLock())
 	if err := downloader.updateIndex(w.Ctx()); err != nil {
-		if corrupted {
+		// With no lists installed there is nothing to fall back on, so the
+		// failure is shown and can be retried.
+		if corrupted || !installed {
 			u.setStagedState(ProgressFailed)
 		}
 		return false, false, fmt.Errorf("stage intel index: %w", err)

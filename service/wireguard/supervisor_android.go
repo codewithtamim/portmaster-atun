@@ -180,14 +180,14 @@ func (w *WireGuard) check(ctx *mgr.WorkerCtx) time.Duration {
 		s.staleSince = time.Time{}
 		w.maybeProbeV6(s)
 		w.publishStats(s, StateConnected, stats)
-		return connectedInterval
+		return w.connectedCheckInterval()
 
 	case !sending:
 		// Nothing is being sent, so there is nothing for the peer to answer.
 		// An idle tunnel is a working tunnel.
 		w.maybeProbeV6(s)
 		w.publishStats(s, StateConnected, stats)
-		return connectedInterval
+		return w.connectedCheckInterval()
 
 	default:
 		// We are sending and the peer has gone quiet.
@@ -207,6 +207,16 @@ func (w *WireGuard) check(ctx *mgr.WorkerCtx) time.Duration {
 		w.publishStats(s, StateDegraded, stats)
 		return connectingInterval
 	}
+}
+
+// connectedCheckInterval is how long a working tunnel waits for its next
+// check. With the screen off nobody sees the state, and a stale peer is still
+// caught once traffic flows again.
+func (w *WireGuard) connectedCheckInterval() time.Duration {
+	if w.sleeping.Load() {
+		return idleInterval
+	}
+	return connectedInterval
 }
 
 // onNetworkChange re-resolves and rebinds without a full restart. Runs on the

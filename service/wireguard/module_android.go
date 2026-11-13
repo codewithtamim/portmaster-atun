@@ -29,6 +29,10 @@ type WireGuard struct {
 	// further change, because the supervisor re-reads everything when it runs.
 	wake chan struct{}
 
+	// sleeping is set while the screen is off. A connected tunnel is then
+	// checked less often, so the checks do not keep the phone awake.
+	sleeping atomic.Bool
+
 	// networkDirty asks the supervisor to rebind. Set from the network watcher,
 	// cleared by the supervisor, so the device stays single-owner.
 	networkDirty atomic.Bool
@@ -108,6 +112,14 @@ func (w *WireGuard) networkWatcher(ctx *mgr.WorkerCtx) error {
 			w.networkDirty.Store(true)
 			w.nudge()
 		}
+	}
+}
+
+// SetSleep is called when the screen turns off (true) or on (false). Waking
+// checks the tunnel at once, so the state shown is fresh when the user looks.
+func (w *WireGuard) SetSleep(enabled bool) {
+	if w.sleeping.Swap(enabled) && !enabled {
+		w.nudge()
 	}
 }
 

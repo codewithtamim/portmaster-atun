@@ -216,3 +216,50 @@ func TestStageWaitsForApprovalOnMeteredNetwork(t *testing.T) {
 		t.Fatalf("installed version %q on a metered network, want 1.0.0", got)
 	}
 }
+
+func TestStageWithoutListsAndNoIndexFails(t *testing.T) {
+	srv := httptest.NewServer(http.FileServer(http.Dir(t.TempDir()))) // Serves no index.
+	t.Cleanup(srv.Close)
+	u, err := New(&testInstance{}, "Test", Config{
+		Name:              intelUpdaterName,
+		Directory:         t.TempDir(),
+		DownloadDirectory: t.TempDir(),
+		PurgeDirectory:    t.TempDir(),
+		IndexFile:         "index.json",
+		AutoCheck:         true,
+		AutoDownload:      true,
+		AutoApply:         true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.index != nil && len(u.index.Artifacts) > 0 {
+		t.Fatal("expected no installed lists")
+	}
+	u.cfg.IndexURLs = []string{srv.URL + "/index.json"}
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state != ProgressFailed {
+		t.Fatalf("state %q, want %q", state, ProgressFailed)
+	}
+}
+
+func TestStageWithHealthyListsAndNoIndexKeepsState(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	// The server stops offering an index, as when it is unreachable.
+	if err := os.Remove(filepath.Join(serveDir, "index.json")); err != nil {
+		t.Fatal(err)
+	}
+	u.setProgressState(ProgressReady)
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state != ProgressReady {
+		t.Fatalf("state %q, want %q", state, ProgressReady)
+	}
+}

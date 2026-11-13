@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -38,13 +39,7 @@ func TestAndroidRuleVectors(t *testing.T) {
 		rule, target, block, allow := fields[0], fields[4], fields[5], fields[6]
 		lines++
 
-		entity := &intel.Entity{}
-		if ip := net.ParseIP(target); ip != nil {
-			entity.IP = ip
-		} else {
-			entity.Domain = target + "."
-		}
-		entity.Init(0)
+		entity := vectorEntity(t, target)
 
 		for _, check := range []struct {
 			prefix string
@@ -71,4 +66,44 @@ func TestAndroidRuleVectors(t *testing.T) {
 	if lines == 0 {
 		t.Fatal("no vectors read")
 	}
+}
+
+// vectorEntity builds the connection a vector's target column describes: a
+// domain or an IP address, then ";"-separated details (see the file header).
+func vectorEntity(t *testing.T, target string) *intel.Entity {
+	t.Helper()
+
+	parts := strings.Split(target, ";")
+	entity := &intel.Entity{}
+	if ip := net.ParseIP(parts[0]); ip != nil {
+		entity.IP = ip
+	} else {
+		entity.Domain = parts[0] + "."
+	}
+	var port uint16
+	for _, detail := range parts[1:] {
+		key, value, _ := strings.Cut(detail, "=")
+		switch {
+		case strings.HasPrefix(detail, "tcp/"), strings.HasPrefix(detail, "udp/"):
+			protocol, number, _ := strings.Cut(detail, "/")
+			parsed, err := strconv.ParseUint(number, 10, 16)
+			if err != nil {
+				t.Fatalf("target %q: bad port %q", target, number)
+			}
+			port = uint16(parsed)
+			entity.Port = port
+			entity.Protocol = 6 // TCP
+			if protocol == "udp" {
+				entity.Protocol = 17
+			}
+		case key == "cname":
+			entity.CNAME = []string{value + "."}
+			entity.EnableCNAMECheck(t.Context(), true)
+		case key == "lists":
+			entity.ListOccurences = map[string][]string{entity.Domain: strings.Split(value, ",")}
+		default:
+			t.Fatalf("target %q: unknown detail %q", target, detail)
+		}
+	}
+	return entity.Init(port)
 }

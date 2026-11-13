@@ -96,7 +96,9 @@ func performUpdate(ctx context.Context) error {
 	// Every entry written by this update has a newer timestamp than this.
 	// The cleanup uses it to tell obsolete entries from current ones,
 	// regardless of how long processing takes (slow disk, system sleep).
-	updateStartedAt := time.Now()
+	// Android keeps the start of an import that was interrupted, so a resumed
+	// import does not purge the entries it already wrote.
+	updateStartedAt := beginImport(upgradables, time.Now())
 
 	// perform the actual upgrade by processing each file
 	// in the returned order.
@@ -173,6 +175,7 @@ func performUpdate(ctx context.Context) error {
 		log.Errorf("intel/filterlists: failed to save cache database version: %s", err)
 	} else {
 		log.Infof("intel/filterlists: successfully migrated cache database to %s", highestVersion.Version)
+		finishImport()
 	}
 
 	// The list update succeeded, resolve any states.

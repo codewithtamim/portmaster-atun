@@ -32,3 +32,11 @@ func platformLoginCredentials(r *http.Request) (username, password string) {
 
 	return body.Username, body.Password
 }
+
+// logoutDisablesSPN reports whether signing out turns the SPN off. On Android
+// the SPN stays the routing target after sign-out. Without an account it cannot
+// connect, so routing lockdown keeps blocking the traffic meant for it instead
+// of the target silently changing to direct.
+func logoutDisablesSPN() bool {
+	return false
+}

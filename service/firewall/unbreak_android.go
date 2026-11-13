@@ -11,7 +11,8 @@ import (
 // securityCategoryIDs are the catalog categories an unbreak match must never
 // lift: malware, and deception (phishing, fraud). "BAD" is left out on
 // purpose: it mixes trackers with malware, and lifting tracker overblocking
-// is exactly what unbreak is for.
+// is exactly what unbreak is for. Its sources that say they block malware or
+// phishing are protected by ResolveSecurityListIDs instead.
 var securityCategoryIDs = []string{"MAL", "DECEP"}
 
 // unbreakMayLift reports whether an unbreak match may cancel this
@@ -29,7 +30,7 @@ func unbreakMayLift(conn *network.Connection) bool {
 	if !blockedByAny(conn.Entity.BlockedByLists, filterlists.GetUnbreakFilterListIDs()) {
 		return true
 	}
-	security, err := filterlists.ResolveListIDs(securityCategoryIDs)
+	security, err := filterlists.ResolveSecurityListIDs(securityCategoryIDs)
 	if err != nil {
 		log.Warningf("filter: failed to resolve security filter lists: %s", err)
 		// Failing closed keeps a malware block in place.

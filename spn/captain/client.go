@@ -131,8 +131,11 @@ reconnect:
 				// Continue
 			case clientResultRetry, clientResultReconnect:
 				// Wait for a short time to not loop too quickly.
+				retryDelay, retryNow := clientRetryWait()
 				select {
-				case <-time.After(clientRetryConnectBackoffDuration):
+				case <-time.After(retryDelay):
+					continue reconnect
+				case <-retryNow:
 					continue reconnect
 				case <-ctx.Done():
 					return nil

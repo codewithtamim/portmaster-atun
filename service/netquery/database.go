@@ -527,7 +527,7 @@ func (db *Database) CleanupHistory(ctx context.Context) error {
 
 	var (
 		// Get global retention days - do not delete in case of error.
-		globalRetentionDays = config.GetAsInt(profile.CfgOptionKeepHistoryKey, 0)()
+		globalRetentionDays = cappedRetentionDays(config.GetAsInt(profile.CfgOptionKeepHistoryKey, 0)())
 
 		profileName   string
 		retentionDays int64
@@ -541,7 +541,7 @@ func (db *Database) CleanupHistory(ctx context.Context) error {
 		p, err := profile.GetLocalProfile(id, nil, nil)
 		if err == nil {
 			profileName = p.String()
-			retentionDays = p.LayeredProfile().KeepHistory()
+			retentionDays = cappedRetentionDays(p.LayeredProfile().KeepHistory())
 		} else {
 			// Getting profile failed, fallback to global setting.
 			tracer.Errorf("history: failed to load profile for id %s: %s", id, err)

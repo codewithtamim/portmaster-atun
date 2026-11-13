@@ -84,6 +84,10 @@ func processListFile(ctx context.Context, filter *scopedBloom, file *updates.Art
 		_ = f.Close()
 	}()
 
+	// Records an interrupted import already wrote (Android only). They are
+	// decoded again for the bloom filter but not written again.
+	skip := importResumePoint(file)
+
 	values := make(chan *listEntry, 100)
 	records := make(chan record.Record, 100)
 
@@ -116,10 +120,29 @@ func processListFile(ctx context.Context, filter *scopedBloom, file *updates.Art
 		return
 	})
 
+	// The writer starts with its batch open, and an open batch that gets no
+	// records for too long fails. With records to skip it therefore starts
+	// at the first record that is written. Without any (always on desktop),
+	// it starts right away as before.
+	startPersist := func() {
+		persistRecords(startSafe, records, func(written int, final bool) {
+			noteImported(file, skip+written, final)
+		})
+	}
+
 	// Process each entry and send records to records channel.
 	startSafe(func() error {
 		defer close(records)
+		var decoded int
 		for entry := range values {
+			decoded++
+			if decoded <= skip {
+				addToBloom(filter, entry)
+				continue
+			}
+			if skip > 0 && decoded == skip+1 {
+				startPersist()
+			}
 			if err := processEntry(ctx, filter, entry, records); err != nil {
 				return err
 			}
@@ -129,12 +152,17 @@ func processListFile(ctx context.Context, filter *scopedBloom, file *updates.Art
 	})
 
 	// Persist records to the database.
-	persistRecords(startSafe, records)
+	if skip == 0 {
+		startPersist()
+	}
 
 	return g.Wait()
 }
 
-func persistRecords(startJob func(func() error), records <-chan record.Record) {
+// persistRecords writes records in batches. After each batch is written,
+// flushed is called with the number of records written so far; final is set
+// for the last batch.
+func persistRecords(startJob func(func() error), records <-chan record.Record, flushed func(written int, final bool)) {
 	var cnt int
 	start := time.Now()
 	logProgress := func() {
@@ -167,6 +195,7 @@ func persistRecords(startJob func(func() error), records <-chan record.Record) {
 				if err := batchPut(nil); err != nil {
 					return err
 				}
+				flushed(cnt, false)
 
 				startJob(processBatch)
 
@@ -178,7 +207,11 @@ func persistRecords(startJob func(func() error), records <-chan record.Record) {
 		if cnt%10000 != 0 { // avoid duplicate logging
 			logProgress()
 		}
-		return batchPut(nil)
+		if err := batchPut(nil); err != nil {
+			return err
+		}
+		flushed(cnt, true)
+		return nil
 	}
 
 	startJob(processBatch)
@@ -196,13 +229,19 @@ func normalizeEntry(entry *listEntry) {
 	}
 }
 
-func processEntry(ctx context.Context, filter *scopedBloom, entry *listEntry, records chan<- record.Record) error {
+// addToBloom normalizes entry and adds it to the bloom filter if it has any
+// sources.
+func addToBloom(filter *scopedBloom, entry *listEntry) {
 	normalizeEntry(entry)
 
 	// Only add the entry to the bloom filter if it has any sources.
 	if len(entry.Resources) > 0 {
 		filter.add(entry.Type, entry.Entity)
 	}
+}
+
+func processEntry(ctx context.Context, filter *scopedBloom, entry *listEntry, records chan<- record.Record) error {
+	addToBloom(filter, entry)
 
 	r := &entityRecord{
 		Value:     entry.Entity,

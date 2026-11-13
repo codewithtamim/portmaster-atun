@@ -225,9 +225,11 @@ func checkEndpointLists(ctx context.Context, conn *network.Connection, p *profil
 	switch result {
 	case endpoints.Denied, endpoints.MatchError:
 		conn.DenyWithContext(reason.String(), optionKey, reason.Context())
+		noteRuleSource(ctx, conn, p)
 		return true
 	case endpoints.Permitted:
 		conn.AcceptWithContext(reason.String(), optionKey, reason.Context())
+		noteRuleSource(ctx, conn, p)
 		return true
 	case endpoints.NoMatch:
 		return false

@@ -1,0 +1,47 @@
+# Shared rule test vectors for Portmaster on Android.
+# Read by the engine (endpoints/android_vectors_test.go) and by the app's rule
+# field (feature/rules RuleVectorsTest.kt). One line per rule and target,
+# tab-separated:
+#   rule        what the user types, without the +/- prefix
+#   typed       yes if the app's rule field accepts it, no if it refuses it
+#   blockScope  label the rule list shows for "- rule" (empty if not typed)
+#   allowScope  label the rule list shows for "+ rule" (empty if not typed)
+#   target      a domain or an IP address to match, optionally followed by
+#               ";"-separated details of the connection: "tcp/443" or
+#               "udp/53" (protocol and port), "cname=name" (the name the
+#               domain points to) and "lists=ID,ID" (filter lists the target
+#               is on)
+#   block       engine result for "- rule": Denied or NoMatch
+#   allow       engine result for "+ rule": Permitted or NoMatch
+example.com	yes	Domain and its subdomains	This domain only	example.com	Denied	Permitted
+example.com	yes	Domain and its subdomains	This domain only	www.example.com	Denied	NoMatch
+example.com	yes	Domain and its subdomains	This domain only	notexample.com	NoMatch	NoMatch
+*.example.com	yes	Subdomains only	Subdomains only	www.example.com	Denied	Permitted
+*.example.com	yes	Subdomains only	Subdomains only	a.b.example.com	Denied	Permitted
+*.example.com	yes	Subdomains only	Subdomains only	example.com	NoMatch	NoMatch
+.example.com	yes	Domain and its subdomains	Domain and its subdomains	example.com	Denied	Permitted
+.example.com	yes	Domain and its subdomains	Domain and its subdomains	www.example.com	Denied	Permitted
+.example.com	yes	Domain and its subdomains	Domain and its subdomains	example.org	NoMatch	NoMatch
+203.0.113.5	yes	This address	This address	203.0.113.5	Denied	Permitted
+203.0.113.5	yes	This address	This address	203.0.113.6	NoMatch	NoMatch
+203.0.113.0/24	yes	Address range	Address range	203.0.113.77	Denied	Permitted
+203.0.113.0/24	yes	Address range	Address range	203.0.114.1	NoMatch	NoMatch
+2001:db8::1	yes	This address	This address	2001:db8::1	Denied	Permitted
+2001:db8::1	yes	This address	This address	2001:db8::2	NoMatch	NoMatch
+2001:db8::/32	yes	Address range	Address range	2001:db8:ffff::1	Denied	Permitted
+2001:db8::/32	yes	Address range	Address range	2001:db9::1	NoMatch	NoMatch
+*google*	no			google.com	Denied	Permitted
+*google*	no			notgoogle.example	Denied	Permitted
+lan	no			192.168.1.10	Denied	Permitted
+localhost	no			127.0.0.1	Denied	Permitted
+example.com */443	yes	Domain and its subdomains · port 443	This domain only · port 443	example.com;tcp/443	Denied	Permitted
+example.com */443	yes	Domain and its subdomains · port 443	This domain only · port 443	example.com;tcp/80	NoMatch	NoMatch
+example.com TCP/443	yes	Domain and its subdomains · TCP port 443	This domain only · TCP port 443	example.com;tcp/443	Denied	Permitted
+example.com TCP/443	yes	Domain and its subdomains · TCP port 443	This domain only · TCP port 443	example.com;udp/443	NoMatch	NoMatch
+203.0.113.5 UDP/5000-5010	yes	This address · UDP ports 5000–5010	This address · UDP ports 5000–5010	203.0.113.5;udp/5005	Denied	Permitted
+DE	yes	Country	Country	192.168.1.5	NoMatch	NoMatch
+C:EU	yes	Continent	Continent	192.168.1.5	NoMatch	NoMatch
+AS3320	yes	Network (AS number)	Network (AS number)	192.168.1.5	NoMatch	NoMatch
+L:TRAC	no			tracker.example;lists=TRAC	Denied	Permitted
+L:TRAC	no			tracker.example;lists=MAL	NoMatch	NoMatch
+tracker.example	yes	Domain and its subdomains	This domain only	www.shop.example;cname=tracker.example	Denied	NoMatch
