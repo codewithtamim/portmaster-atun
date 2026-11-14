@@ -232,6 +232,9 @@ func updateListIndex() error {
 	if err != nil {
 		return err
 	}
+	if err := checkListIndexSchema(index); err != nil {
+		return err
+	}
 	index.SetKey(filterListIndexKey)
 
 	if err := cache.Put(index); err != nil {

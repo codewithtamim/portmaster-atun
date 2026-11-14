@@ -58,6 +58,7 @@ func (u *Updater) stageIntelForApproval(w *mgr.WorkerCtx) error {
 	}
 
 	log.Warningf("updates/%s: repairing corrupted files", u.cfg.Name)
+	u.repairing.Store(true)
 	// No index URLs: the index saved by stageIntel is installed again.
 	if err := u.updateAndUpgrade(w, nil, false, true); err != nil {
 		log.Warningf("updates/%s: repair failed: %s", u.cfg.Name, err)

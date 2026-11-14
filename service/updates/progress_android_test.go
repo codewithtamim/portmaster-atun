@@ -84,3 +84,24 @@ func TestFailedAttemptDoesNotWaitForAnImport(t *testing.T) {
 		t.Fatalf("state: %s", got)
 	}
 }
+
+func TestRepairFlagClearsOnceTheListsAreLoaded(t *testing.T) {
+	u := intelTestUpdater()
+	ready := false
+	u.SetFilterListsReadyCheck(func() bool { return ready })
+	u.repairing.Store(true)
+
+	u.beginProgress()
+	u.endProgress(nil)
+	if !u.Progress().Repairing {
+		t.Fatal("repair flag dropped while the import was pending")
+	}
+	ready = true
+	if !u.Progress().Repairing {
+		t.Fatal("repair flag dropped while the state was still rebuilding")
+	}
+	u.EndFilterListCache()
+	if u.Progress().Repairing {
+		t.Fatal("repair flag kept after the lists were loaded")
+	}
+}

@@ -16,11 +16,15 @@ var tunLock sync.Mutex
 // StartTun attaches the TUN VpnService established and starts interception.
 // The fd does not exist at boot, so the interception group is started here.
 // Invalid parameters are rejected before anything running is touched.
-func (i *Instance) StartTun(fd, mtu int, tunAddr, fakeDNS string) error {
+func (i *Instance) StartTun(fd, mtu int, tunAddr, fakeDNS, tunAddr6 string) error {
 	tunLock.Lock()
 	defer tunLock.Unlock()
 
 	cfg, err := atun.NewTunConfig(fd, mtu, tunAddr, fakeDNS)
+	if err != nil {
+		return err
+	}
+	cfg, err = cfg.WithAddr6(tunAddr6)
 	if err != nil {
 		return err
 	}

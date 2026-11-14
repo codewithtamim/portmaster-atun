@@ -31,7 +31,7 @@ const defaultMTU = 1500
 // no source and never leave the TUN.
 const defaultTunAddr = "100.127.247.245"
 
-// defaultTunAddr6 is the IPv6 VpnService.Builder.addAddress value.
+// defaultTunAddr6 is the default IPv6 VpnService.Builder.addAddress value.
 // The same TUN carries IPv6 so apps cannot bypass the firewall on v6.
 const defaultTunAddr6 = "fd00:9:9:9::1"
 
@@ -245,12 +245,7 @@ func newStack(cfg TunConfig, workerManager *mgr.Manager) (*stackSession, error) 
 		abort()
 		return nil, err
 	}
-	tunAddr6, err := netip.ParseAddr(defaultTunAddr6)
-	if err != nil {
-		abort()
-		return nil, fmt.Errorf("atun: parse TUN IPv6: %w", err)
-	}
-	if err := addTunProtocolAddress(s, nicID, tunAddr6); err != nil {
+	if err := addTunProtocolAddress(s, nicID, cfg.Addr6); err != nil {
 		abort()
 		return nil, err
 	}

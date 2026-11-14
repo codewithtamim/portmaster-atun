@@ -43,6 +43,31 @@ func TestNewTunConfig(t *testing.T) {
 	}
 }
 
+func TestTunConfigWithAddr6(t *testing.T) {
+	base, err := NewTunConfig(3, 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.Addr6.String() != defaultTunAddr6 {
+		t.Fatalf("default IPv6 not applied: %v", base.Addr6)
+	}
+	if cfg, err := base.WithAddr6(" "); err != nil || cfg != base {
+		t.Fatalf("empty value changed the config: %+v, %v", cfg, err)
+	}
+	cfg, err := base.WithAddr6("fd00:9:9:a::1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Addr6.String() != "fd00:9:9:a::1" || cfg == base {
+		t.Fatalf("IPv6 not kept: %+v", cfg)
+	}
+	for _, raw := range []string{"nope", "10.0.0.2", "::ffff:10.0.0.2"} {
+		if _, err := base.WithAddr6(raw); !errors.Is(err, ErrInvalidTunAddr) {
+			t.Errorf("%q: got %v, want %v", raw, err, ErrInvalidTunAddr)
+		}
+	}
+}
+
 func TestTunConfigStore(t *testing.T) {
 	t.Cleanup(ClearTunConfig)
 

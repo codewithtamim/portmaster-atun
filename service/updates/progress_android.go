@@ -46,6 +46,9 @@ type progressTracker struct {
 	// listChecksAtBegin is its value when the current attempt began.
 	listChecksFinished atomic.Int64
 	listChecksAtBegin  atomic.Int64
+	// repairing is set while damaged intel files are being installed again,
+	// and stays set until the filter lists are loaded once more.
+	repairing atomic.Bool
 }
 
 // Progress is byte-level intel download status for HTTP clients.
@@ -67,6 +70,9 @@ type Progress struct {
 	// AttemptsFinished counts ended update attempts. A client compares it across
 	// a request to learn when that attempt ended, and State is then its outcome.
 	AttemptsFinished int64 `json:"attemptsFinished"`
+	// Repairing is set while the engine recovers from damaged filter data on
+	// disk, so filtering may be incomplete until the lists are loaded again.
+	Repairing bool `json:"repairing,omitempty"`
 }
 
 // SetFilterListsReadyCheck lets filterlists report whether blooms are loaded.
@@ -93,6 +99,11 @@ func (u *Updater) Progress() Progress {
 	if fn, ok := u.filterListsLastUpdatedCheck.Load().(func() int64); ok && fn != nil {
 		lastUpdated = fn()
 	}
+	// The repair ends once the lists are loaded and no download or import of
+	// the repaired files is still running.
+	if ready && state != ProgressChecking && state != ProgressDownloading && state != ProgressRebuilding {
+		u.repairing.Store(false)
+	}
 	return Progress{
 		State:            state,
 		DownloadedBytes:  u.downloadedBytes.Load(),
@@ -104,6 +115,7 @@ func (u *Updater) Progress() Progress {
 		CacheLoadedBytes: u.cacheLoadedBytes.Load(),
 		CacheTotalBytes:  u.cacheTotalBytes.Load(),
 		AttemptsFinished: u.attemptsFinished.Load(),
+		Repairing:        u.repairing.Load(),
 	}
 }
 

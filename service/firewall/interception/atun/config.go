@@ -27,6 +27,9 @@ type TunConfig struct {
 	// FakeDNS is the IPv4 from Builder.addDnsServer. Nothing listens there;
 	// atun answers for it.
 	FakeDNS netip.Addr
+	// Addr6 is the IPv6 from Builder.addAddress. The app moves it off its
+	// default when the local network already uses that range.
+	Addr6 netip.Addr
 }
 
 // NewTunConfig validates the VpnService parameters. An mtu of 0 and empty
@@ -56,7 +59,25 @@ func NewTunConfig(fd, mtu int, tunAddr, fakeDNS string) (TunConfig, error) {
 		MTU:     uint32(mtu),
 		Addr:    addr,
 		FakeDNS: dns,
+		Addr6:   netip.MustParseAddr(defaultTunAddr6),
 	}, nil
+}
+
+// WithAddr6 returns cfg with the TUN's IPv6 address set. An empty value
+// keeps the default that matches the app's VpnService.Builder.
+func (cfg TunConfig) WithAddr6(raw string) (TunConfig, error) {
+	if strings.TrimSpace(raw) == "" {
+		return cfg, nil
+	}
+	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+	if err != nil {
+		return TunConfig{}, fmt.Errorf("%w %q: %w", ErrInvalidTunAddr, raw, err)
+	}
+	if !addr.Is6() || addr.Is4In6() {
+		return TunConfig{}, fmt.Errorf("%w %q: not IPv6", ErrInvalidTunAddr, raw)
+	}
+	cfg.Addr6 = addr
+	return cfg, nil
 }
 
 func orDefault(value, fallback string) string {
