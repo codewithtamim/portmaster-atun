@@ -162,7 +162,9 @@ func InstallProfile(doc string) error {
 	return nil
 }
 
-// ClearProfile removes the installed profile and takes the device down.
+// ClearProfile removes the installed profile and takes the device down. While
+// WireGuard is the routing target the tunnel stays wanted: see
+// CfgOptionConfigSelectedKey.
 func ClearProfile() error {
 	if module == nil {
 		return ErrUnsupported
@@ -172,7 +174,9 @@ func ClearProfile() error {
 	module.wanted = nil
 	module.profileLock.Unlock()
 
-	setConfigSelected(false)
+	if !keepsSelectionAfterClear(routing.Current(), ConfigSelected()) {
+		setConfigSelected(false)
+	}
 	log.Info("wireguard: cleared profile")
 	module.nudge()
 

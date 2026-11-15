@@ -164,9 +164,11 @@ func handleGetUserProfile(ar *api.Request) (r record.Record, err error) {
 
 	// Should we refresh the user profile?
 	if ar.URL.Query().Get("refresh") != "" {
-		user, _, err = UpdateUser()
+		var code int
+		user, code, err = UpdateUser()
 		if err != nil {
-			return nil, err
+			// Android only; returns err unchanged elsewhere.
+			return nil, profileRefreshError(err, code)
 		}
 	}
 

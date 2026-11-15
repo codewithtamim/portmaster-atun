@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/safing/portmaster/base/api"
@@ -97,6 +98,7 @@ func androidDebugReport(ar *api.Request) ([]byte, error) {
 	}
 
 	addRedactedUnexpectedLogs(di)
+	addRedactedRecentLogs(di)
 	addProtectionSection(di)
 	addSPNSection(di)
 	addFilterListsSection(di)
@@ -180,6 +182,32 @@ func addRedactedUnexpectedLogs(di *debug.Info) {
 	}
 	redacted = append(redacted, fmt.Sprintf("%s CURRENT TIME", time.Now().Format("060102 15:04:05.000")))
 	di.AddSection("Unexpected Logs", debug.UseCodeSection|debug.AddContentLineBreaks, redacted...)
+}
+
+// addRedactedRecentLogs adds the last engine log lines at the current log
+// level. The unexpected lines above are only the last few warnings; these show
+// what the engine was doing around them. A line with a trace spans several
+// lines, each redacted by the same allowlist.
+func addRedactedRecentLogs(di *debug.Info) {
+	entries := log.GetRecentLogs()
+	if len(entries) == 0 {
+		di.AddSection("No Recent Logs", debug.NoFlags)
+		return
+	}
+	redacted := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		for _, line := range strings.Split(entry, "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			redacted = append(redacted, redactForReport(line))
+		}
+	}
+	di.AddSection(
+		fmt.Sprintf("Recent Logs (%s level)", log.GetLogLevel().Name()),
+		debug.UseCodeSection|debug.AddContentLineBreaks,
+		redacted...,
+	)
 }
 
 // addProtectionSection reports whether the TUN is attached and intercepting,

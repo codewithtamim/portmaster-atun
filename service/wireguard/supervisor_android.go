@@ -74,6 +74,11 @@ func (w *WireGuard) step(ctx *mgr.WorkerCtx) time.Duration {
 		}
 		w.failures = 0
 		w.retryAt = time.Time{}
+		if profile == nil && routing.Current() != routing.TargetWireGuard {
+			// The target moved away with no config left. The tunnel is no
+			// longer wanted, so coming back to WireGuard starts clean.
+			setConfigSelected(false)
+		}
 		w.publishDown(profile)
 		return idleInterval
 
@@ -272,6 +277,9 @@ func (w *WireGuard) publishDown(profile *Profile) {
 		snapshot.Profile = profile.Meta()
 	} else {
 		snapshot.ErrCode = ErrCodeNoProfileC
+		if configRemoved(routing.Current(), ConfigSelected()) {
+			snapshot.ErrCode = ErrCodeConfigRemoved
+		}
 	}
 
 	// The idle tick runs forever while the target is not WireGuard. Republishing

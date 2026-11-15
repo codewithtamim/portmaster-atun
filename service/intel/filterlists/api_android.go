@@ -71,7 +71,7 @@ func putFilterLists(ar *api.Request) (any, error) {
 			return nil, api.ErrorWithStatus(err, http.StatusBadRequest)
 		}
 	}
-	selected := ensureUnbreak(body.Selected)
+	selected := EnsureUnbreak(body.Selected)
 	if err := config.SetConfigOption(cfgOptionFilterListsKey, selected); err != nil {
 		return nil, err
 	}
@@ -122,7 +122,10 @@ func snapshotLastUpdatedUnix() int64 {
 	return verRecord.Meta().Modified
 }
 
-func ensureUnbreak(ids []string) []string {
+// EnsureUnbreak returns the selection without empty or repeated IDs and with
+// the unbreak category in it. Unbreak is not a user choice: it keeps sites
+// working that tracker lists break, so every stored selection carries it.
+func EnsureUnbreak(ids []string) []string {
 	out := make([]string, 0, len(ids)+1)
 	seen := make(map[string]struct{}, len(ids)+1)
 	for _, id := range ids {

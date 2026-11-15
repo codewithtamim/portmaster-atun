@@ -97,6 +97,10 @@ const (
 	ErrCodeNoProtect  = "no_protector"
 	ErrCodeHandshake  = "handshake"
 	ErrCodeNoProfileC = "no_profile"
+	// ErrCodeConfigRemoved: the selected config was removed while WireGuard
+	// was the routing target. Traffic meant for the tunnel is blocked (with
+	// lockdown on) until another config is selected or the target changes.
+	ErrCodeConfigRemoved = "config_removed"
 )
 
 // downSnapshot is shared by every reader before the first device ever starts, so

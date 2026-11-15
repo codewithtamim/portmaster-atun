@@ -35,6 +35,11 @@ func SetLogcatFilter(filter func(level Severity, text string) (string, bool)) {
 
 // writeAndroidLog writes a line to logcat with __android_log_write.
 func writeAndroidLog(level Severity, text string) {
+	// Kept for the diagnostics report before the logcat filter runs: a
+	// release build drops routine lines from logcat, and the report would
+	// otherwise have nothing but warnings to show.
+	recentLogs.add(text)
+
 	if logcatFilter != nil {
 		var keep bool
 		if text, keep = logcatFilter(level, text); !keep {

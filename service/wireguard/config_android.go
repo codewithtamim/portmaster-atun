@@ -5,12 +5,18 @@ package wireguard
 import (
 	"github.com/safing/portmaster/base/config"
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/service/routing"
 )
 
 // CfgOptionConfigSelectedKey records that the app has a WireGuard config
 // selected. The profile itself lives only in memory, so after an engine
 // restart this is what tells the firewall a tunnel is wanted before the app
 // has installed the profile again. Written by InstallProfile and ClearProfile.
+//
+// It also stays set when the selected config is removed while WireGuard is
+// the routing target. The user was routing through that tunnel, so traffic
+// keeps failing closed (with lockdown on) until another config is selected or
+// the target changes, instead of quietly going out directly.
 const CfgOptionConfigSelectedKey = "wireguard/configSelected"
 
 // configSelected reads CfgOptionConfigSelectedKey. Nil until registerConfig.
@@ -38,9 +44,9 @@ func ConfigSelected() bool {
 	return configSelected != nil && configSelected()
 }
 
-// WantsTunnel reports whether the WireGuard target has a config to carry
-// traffic. False only when the user has no config selected at all; then the
-// target cannot do anything and traffic goes direct.
+// WantsTunnel reports whether the WireGuard target is meant to carry traffic.
+// False only when the user never selected a config for it; then the target
+// cannot do anything and traffic goes direct.
 func WantsTunnel() bool {
 	return wantsTunnel(Status().Profile.Name, ConfigSelected())
 }
@@ -63,4 +69,18 @@ func setConfigSelected(selected bool) {
 	if err := config.SetConfigOption(CfgOptionConfigSelectedKey, value); err != nil {
 		log.Warningf("wireguard: failed to save config selection: %s", err)
 	}
+}
+
+// keepsSelectionAfterClear reports whether removing the profile leaves the
+// tunnel wanted: only while WireGuard is the routing target and a config was
+// selected. Anywhere else the selection simply ends.
+func keepsSelectionAfterClear(target routing.Target, selected bool) bool {
+	return target == routing.TargetWireGuard && selected
+}
+
+// configRemoved reports whether the tunnel is wanted but has no profile: the
+// selected config was removed while WireGuard was the routing target. Only
+// asked when no profile is installed.
+func configRemoved(target routing.Target, selected bool) bool {
+	return target == routing.TargetWireGuard && selected
 }

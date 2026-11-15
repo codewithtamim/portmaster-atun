@@ -15,3 +15,8 @@ func platformLoginCredentials(*http.Request) (username, password string) {
 func logoutDisablesSPN() bool {
 	return true
 }
+
+// profileRefreshError returns the error as it is on desktop.
+func profileRefreshError(err error, _ int) error {
+	return err
+}

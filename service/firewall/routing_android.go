@@ -58,7 +58,8 @@ func checkAlternateRouting(ctx context.Context, conn *network.Connection) bool {
 	// the user has a file would look like a failure, and the routing
 	// screen shows a direct connection until one is imported. A selected
 	// config still counts after an engine restart, before the app has
-	// installed its profile again, so that window fails closed below.
+	// installed its profile again, and after the selected config was
+	// removed, so both fail closed below.
 	if !wireguard.WantsTunnel() {
 		return true
 	}

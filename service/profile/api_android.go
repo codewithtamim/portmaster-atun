@@ -16,6 +16,7 @@ import (
 	"github.com/safing/portmaster/base/database/query"
 	"github.com/safing/portmaster/base/log"
 	"github.com/safing/portmaster/base/utils/aconn"
+	"github.com/safing/portmaster/service/intel/filterlists"
 )
 
 const (
@@ -377,6 +378,9 @@ func putProfile(source ProfileSource, id string, ar *api.Request) (interface{}, 
 			deleteHierarchicalKey(p.Config, key)
 			continue
 		}
+		if key == CfgOptionFilterListsKey {
+			value = filterListsWithUnbreak(value)
+		}
 		config.PutValueIntoHierarchicalConfig(p.Config, key, value)
 	}
 	p.dataParsed = false
@@ -408,7 +412,7 @@ func putGlobalConfigProfile(ar *api.Request) (interface{}, error) {
 		}
 	}
 	if v, ok := flat[CfgOptionFilterListsKey]; ok {
-		if err := config.SetConfigOption(CfgOptionFilterListsKey, asStringSlice(v)); err != nil {
+		if err := config.SetConfigOption(CfgOptionFilterListsKey, filterListsWithUnbreak(v)); err != nil {
 			return nil, err
 		}
 	}
@@ -815,6 +819,17 @@ func overlayStringSlice(flat map[string]interface{}, key string) []string {
 		return nil
 	}
 	return asStringSlice(v)
+}
+
+// filterListsWithUnbreak returns a filter-list selection as it is stored: with
+// the unbreak category added. An empty selection stays empty, since it means
+// "no filter lists" and there is nothing for unbreak to lift.
+func filterListsWithUnbreak(v interface{}) []string {
+	ids := asStringSlice(v)
+	if len(ids) == 0 {
+		return ids
+	}
+	return filterlists.EnsureUnbreak(ids)
 }
 
 func asStringSlice(v interface{}) []string {

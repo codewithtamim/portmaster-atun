@@ -8,6 +8,7 @@ import (
 
 	"github.com/safing/portmaster/base/api"
 	"github.com/safing/portmaster/base/log"
+	"github.com/safing/portmaster/spn/access/account"
 )
 
 type loginJSONBody struct {
@@ -39,4 +40,26 @@ func platformLoginCredentials(r *http.Request) (username, password string) {
 // of the target silently changing to direct.
 func logoutDisablesSPN() bool {
 	return false
+}
+
+// Signing in does not turn the SPN on by itself. The routing target owns
+// spn/enable on Android: with the upstream default a sign-in would flip it,
+// and the target would follow it away from WireGuard or a direct connection
+// without the user choosing that. The app selects the SPN target itself when
+// the sign-in was started to use it.
+func init() {
+	EnableAfterLogin = false
+}
+
+// profileRefreshError keeps the account server's answer when a profile
+// refresh is refused because the device limit is reached or the device is
+// locked. A plain error reaches the app as an internal error, and it could not
+// tell the user which of the two it is.
+func profileRefreshError(err error, code int) error {
+	switch code {
+	case account.StatusReachedDeviceLimit, account.StatusDeviceInactive:
+		return api.ErrorWithStatus(err, code)
+	default:
+		return err
+	}
 }
