@@ -124,6 +124,9 @@ func start() error {
 		log.Warningf("profile: error during loading global profile from configuration: %s", err)
 	}
 
+	// Android only; a no-op elsewhere. See special_android.go.
+	ensurePlatformProfiles()
+
 	return nil
 }
 

@@ -14,6 +14,20 @@ import (
 	"github.com/safing/portmaster/service/mgr"
 )
 
+// checkFailureShownAfter is how many background checks in a row must fail
+// before installed lists are reported as failing to update. One failure is
+// often a passing network hiccup; the next check usually works.
+const checkFailureShownAfter = 2
+
+// checkFailureShown reports whether a failed background check of installed
+// lists is shown to the user as a failed update. Only while the phone has a
+// network that is not a sign-in portal: offline, a check cannot work and the
+// lists going stale is reported by their age instead.
+func checkFailureShown(failures int32, state aconn.DeviceState) bool {
+	connected := (state.Wifi || state.Cellular) && !state.Captive
+	return connected && failures >= checkFailureShownAfter
+}
+
 func (u *Updater) holdsIntelForApproval() bool {
 	return u.cfg.Name == intelUpdaterName
 }
@@ -84,12 +98,16 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 	downloader := NewDownloader(u, u.getIndexURLsWithLock())
 	if err := downloader.updateIndex(w.Ctx()); err != nil {
 		// With no lists installed there is nothing to fall back on, so the
-		// failure is shown and can be retried.
-		if corrupted || !installed {
+		// failure is shown and can be retried. Installed lists keep working,
+		// so their failed check is shown only once it is clearly not the
+		// network: see checkFailureShown.
+		failures := u.backgroundCheckFailures.Add(1)
+		if corrupted || !installed || checkFailureShown(failures, aconn.CurrentDeviceState()) {
 			u.setStagedState(ProgressFailed)
 		}
 		return false, false, fmt.Errorf("stage intel index: %w", err)
 	}
+	u.backgroundCheckFailures.Store(0)
 
 	u.indexLock.Lock()
 	current := u.index

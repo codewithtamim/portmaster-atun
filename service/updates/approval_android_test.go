@@ -263,3 +263,29 @@ func TestStageWithHealthyListsAndNoIndexKeepsState(t *testing.T) {
 		t.Fatalf("state %q, want %q", state, ProgressReady)
 	}
 }
+
+// Installed lists that cannot be checked are reported as failing only after
+// repeated failures on a real network: offline or behind a sign-in portal the
+// check cannot work, and their age says they are getting stale.
+func TestCheckFailureShown(t *testing.T) {
+	t.Parallel()
+
+	wifi := aconn.DeviceState{Wifi: true}
+	tests := []struct {
+		name     string
+		failures int32
+		state    aconn.DeviceState
+		want     bool
+	}{
+		{"first failure on wifi", 1, wifi, false},
+		{"second failure on wifi", 2, wifi, true},
+		{"second failure on mobile", 2, aconn.DeviceState{Cellular: true}, true},
+		{"offline", 5, aconn.DeviceState{}, false},
+		{"sign-in portal", 5, aconn.DeviceState{Wifi: true, Captive: true}, false},
+	}
+	for _, tc := range tests {
+		if got := checkFailureShown(tc.failures, tc.state); got != tc.want {
+			t.Errorf("%s: checkFailureShown = %t, want %t", tc.name, got, tc.want)
+		}
+	}
+}

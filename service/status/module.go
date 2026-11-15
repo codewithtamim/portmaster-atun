@@ -68,7 +68,8 @@ func (s *Status) prep() error {
 	if err := s.setupRuntimeProvider(); err != nil {
 		return err
 	}
-	return nil
+	// Android only; a no-op elsewhere. See health_android.go.
+	return s.registerPlatformAPI()
 }
 
 // AddToDebugInfo adds the system status to the given debug.Info.

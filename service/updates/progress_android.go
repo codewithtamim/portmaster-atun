@@ -49,6 +49,9 @@ type progressTracker struct {
 	// repairing is set while damaged intel files are being installed again,
 	// and stays set until the filter lists are loaded once more.
 	repairing atomic.Bool
+	// backgroundCheckFailures counts background index checks that failed in
+	// a row. A successful check resets it.
+	backgroundCheckFailures atomic.Int32
 }
 
 // Progress is byte-level intel download status for HTTP clients.
