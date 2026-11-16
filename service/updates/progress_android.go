@@ -76,6 +76,10 @@ type Progress struct {
 	// Repairing is set while the engine recovers from damaged filter data on
 	// disk, so filtering may be incomplete until the lists are loaded again.
 	Repairing bool `json:"repairing,omitempty"`
+	// FirstDownload is set while no intel download has finished since install,
+	// so the lists in place are the ones bundled with the app. The next
+	// download then waits for the user's approval on any network.
+	FirstDownload bool `json:"firstDownload,omitempty"`
 }
 
 // SetFilterListsReadyCheck lets filterlists report whether blooms are loaded.
@@ -119,6 +123,7 @@ func (u *Updater) Progress() Progress {
 		CacheTotalBytes:  u.cacheTotalBytes.Load(),
 		AttemptsFinished: u.attemptsFinished.Load(),
 		Repairing:        u.repairing.Load(),
+		FirstDownload:    u.holdsIntelForApproval() && !u.downloadedSinceInstall(),
 	}
 }
 
@@ -196,6 +201,11 @@ func (u *Updater) endProgress(err error) {
 	switch {
 	case err == nil:
 		u.clearPartialDownloads()
+		// A repair installs the same version again, so it is not a download
+		// the user approved.
+		if !u.repairing.Load() {
+			u.noteDownloaded()
+		}
 		u.endAppliedUpdate()
 	case errors.Is(err, ErrSameIndex), errors.Is(err, ErrNoUpdateAvailable), errors.Is(err, ErrActionRequired):
 		if u.cacheActive.Load() {

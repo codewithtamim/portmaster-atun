@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/safing/portmaster/base/log"
@@ -36,13 +38,43 @@ func intelProgressMetered() bool {
 	return aconn.CurrentDeviceState().Metered
 }
 
+// firstDownloadMarker is a file beside the installed lists that exists once a
+// download has finished since install. It sits outside the list directory, so
+// installing the lists bundled with a newer app version keeps it, and clearing
+// the app's data removes it.
+func (u *Updater) firstDownloadMarker() string {
+	return filepath.Clean(u.cfg.Directory) + ".downloaded"
+}
+
+// downloadedSinceInstall reports whether a download has finished since
+// install. Until then the lists in place, if any, are the ones bundled with
+// the app.
+func (u *Updater) downloadedSinceInstall() bool {
+	_, err := os.Stat(u.firstDownloadMarker())
+	return err == nil
+}
+
+// noteDownloaded records that intel lists were downloaded, so later updates on
+// an unmetered network no longer wait for approval. A failed write only means
+// the user is asked once more.
+func (u *Updater) noteDownloaded() {
+	if !u.holdsIntelForApproval() || u.downloadedSinceInstall() {
+		return
+	}
+	if err := os.WriteFile(u.firstDownloadMarker(), nil, 0o600); err != nil {
+		log.Warningf("updates/%s: failed to record the first download: %s", u.cfg.Name, err)
+	}
+}
+
 // stageIntelForApproval fetches the index and reports its size.
 //
-// When lists are already installed and intact and the network isn't metered,
-// the update is downloaded right away, as the force-update API would: lists
-// go stale otherwise, and only a first download (which may be large) or a
-// metered network needs the user's approval. Otherwise artifact bytes are
-// downloaded only from the force-update API.
+// When lists are already installed and intact, the network isn't metered and a
+// download has finished since install, the update is downloaded right away, as
+// the force-update API would: lists go stale otherwise. The first download
+// after install waits for the user's approval on any network, even when the
+// lists bundled with the app are in place, and so does any download on a
+// metered network. Otherwise artifact bytes are downloaded only from the
+// force-update API.
 //
 // This is a background check the user did not ask for, so a failed fetch leaves
 // the state alone while lists are installed: nothing was being downloaded, and
@@ -131,7 +163,7 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 		}
 	}
 
-	if current != nil && !corrupted && !intelProgressMetered() {
+	if current != nil && !corrupted && !intelProgressMetered() && u.downloadedSinceInstall() {
 		return false, true, nil
 	}
 

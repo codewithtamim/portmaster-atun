@@ -187,6 +187,7 @@ func TestStageDownloadsUpdateOnUnmeteredNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := newHealthyIntel(t, serveDir)
+	markDownloaded(t, u)
 	setMetered(t, false)
 
 	runStage(t, u)
@@ -196,6 +197,78 @@ func TestStageDownloadsUpdateOnUnmeteredNetwork(t *testing.T) {
 	}
 	if got := u.index.Version; got != "1.0.1" {
 		t.Fatalf("installed version %q, want 1.0.1", got)
+	}
+}
+
+// markDownloaded records a finished download, as after the first one the user
+// approved.
+func markDownloaded(t *testing.T, u *Updater) {
+	t.Helper()
+	if err := os.WriteFile(u.firstDownloadMarker(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStageFirstDownloadWaitsForApprovalOnUnmeteredNetwork(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, false)
+
+	runStage(t, u)
+
+	progress := u.Progress()
+	if progress.State != ProgressAwaitingApproval {
+		t.Fatalf("state %q, want %q", progress.State, ProgressAwaitingApproval)
+	}
+	if !progress.FirstDownload {
+		t.Fatal("first download not reported")
+	}
+	if got := u.index.Version; got != "1.0.0" {
+		t.Fatalf("installed version %q before approval, want 1.0.0", got)
+	}
+}
+
+func TestApprovedDownloadIsRecorded(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, false)
+
+	m := mgr.New("updates approve test")
+	if err := m.Do("approve", func(w *mgr.WorkerCtx) error {
+		return u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := u.index.Version; got != "1.0.1" {
+		t.Fatalf("installed version %q, want 1.0.1", got)
+	}
+	if !u.downloadedSinceInstall() {
+		t.Fatal("approved download not recorded")
+	}
+	if u.Progress().FirstDownload {
+		t.Fatal("first download still reported after a download")
+	}
+}
+
+func TestRepairIsNotRecordedAsDownload(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.0", testPublished); err != nil {
+		t.Fatal(err)
+	}
+	u, srv := newCorruptedIntel(t, serveDir)
+	setArtifactURLs(t, serveDir, srv.URL)
+
+	runStage(t, u)
+
+	if u.downloadedSinceInstall() {
+		t.Fatal("repair recorded as a download")
 	}
 }
 
