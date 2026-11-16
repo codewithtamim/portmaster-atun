@@ -242,6 +242,9 @@ func UpdateIPsAndCNAMEs(q *resolver.Query, rrCache *resolver.RRCache, conn *netw
 		profileID = resolver.IPInfoProfileScopeGlobal
 	default:
 		profileID = localProfile.ID
+		if sharesIPInfoGlobally(localProfile.ID) {
+			profileID = resolver.IPInfoProfileScopeGlobal
+		}
 	}
 
 	// Collect IPs and CNAMEs.
