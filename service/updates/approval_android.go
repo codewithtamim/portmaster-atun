@@ -173,7 +173,9 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 	}
 	u.downloadedBytes.Store(0)
 	u.totalBytes.Store(total)
-	u.totalStaged.Store(true)
+	// An unknown size is not kept: the download then sums the sizes its
+	// responses report, so the bar still has a total to move against.
+	u.totalStaged.Store(total > 0)
 	u.setStagedState(ProgressAwaitingApproval)
 	log.Infof("updates/%s: waiting for approval of %d bytes", u.cfg.Name, total)
 	return false, false, nil
@@ -197,6 +199,10 @@ func (u *Updater) setStagedState(state string) {
 	u.setProgressState(state)
 }
 
+// pendingArtifactBytes is the download size of the index's artifacts, or 0
+// when it is unknown. One artifact that cannot be sized, from a failed
+// request or an error response, makes the whole size unknown: a partial sum
+// would be shown as the size and let the progress bar run past 100%.
 func pendingArtifactBytes(ctx context.Context, index *Index) int64 {
 	if index == nil {
 		return 0
@@ -210,17 +216,19 @@ func pendingArtifactBytes(ctx context.Context, index *Index) int64 {
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, artifact.URLs[0], nil)
 		if err != nil {
 			log.Debugf("updates: failed to build HEAD request for %s: %s", artifact.URLs[0], err)
-			continue
+			return 0
 		}
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Debugf("updates: failed to size artifact %s: %s", artifact.URLs[0], err)
-			continue
+			return 0
 		}
 		_ = resp.Body.Close()
-		if resp.ContentLength > 0 {
-			total += resp.ContentLength
+		if resp.StatusCode != http.StatusOK || resp.ContentLength <= 0 {
+			log.Debugf("updates: no size for artifact %s: status %d", artifact.URLs[0], resp.StatusCode)
+			return 0
 		}
+		total += resp.ContentLength
 	}
 	return total
 }

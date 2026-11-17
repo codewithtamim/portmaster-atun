@@ -257,6 +257,45 @@ func TestApprovedDownloadIsRecorded(t *testing.T) {
 	}
 }
 
+// A size check that fails must not leave a total smaller than the download,
+// or the progress bar runs past 100%.
+func TestUnsizedArtifactsDoNotPushProgressPastTheTotal(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	files := http.FileServer(http.Dir(serveDir))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead && r.URL.Path != "/index.json" {
+			http.Error(w, "size check refused", http.StatusServiceUnavailable)
+			return
+		}
+		files.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	setArtifactURLs(t, serveDir, srv.URL)
+	u.cfg.IndexURLs = []string{srv.URL + "/index.json"}
+	setMetered(t, false)
+
+	runStage(t, u)
+	if progress := u.Progress(); progress.State != ProgressAwaitingApproval || progress.TotalBytes != 0 {
+		t.Fatalf("staged %q with total %d, want %q with an unknown (0) total",
+			progress.State, progress.TotalBytes, ProgressAwaitingApproval)
+	}
+
+	m := mgr.New("updates approve test")
+	if err := m.Do("approve", func(w *mgr.WorkerCtx) error {
+		return u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	progress := u.Progress()
+	if progress.DownloadedBytes == 0 || progress.DownloadedBytes > progress.TotalBytes {
+		t.Fatalf("downloaded %d of %d bytes", progress.DownloadedBytes, progress.TotalBytes)
+	}
+}
+
 func TestRepairIsNotRecordedAsDownload(t *testing.T) {
 	serveDir := t.TempDir()
 	if err := GenerateMockFolder(serveDir, "Test", "1.0.0", testPublished); err != nil {
