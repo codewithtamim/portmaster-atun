@@ -119,6 +119,13 @@ func handleLogLevel(ar *api.Request) (any, error) {
 		level := log.ParseLevel(body.Level)
 		switch level {
 		case log.WarningLevel, log.InfoLevel, log.DebugLevel:
+			// Saved as the log level setting, which the engine applies on
+			// every start, so the level survives a restart. The setting's
+			// change callback runs later in a worker; set the level here
+			// too so the response already carries it.
+			if err := config.SetConfigOption(config.CfgLogLevel, level.Name()); err != nil {
+				return nil, err
+			}
 			log.SetLogLevel(level)
 		default:
 			return nil, api.ErrorWithStatus(errBadLogLevel, http.StatusBadRequest)
