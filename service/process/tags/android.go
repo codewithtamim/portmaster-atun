@@ -72,7 +72,11 @@ func (h *AndroidHandler) AddTags(p *process.Process) {
 
 	info, err := aconn.GetAppInfo(p.UserID)
 	if err != nil {
-		log.Warningf("tags: failed to get android app info for uid %d: %s", p.UserID, err)
+		// Parts of Android without an app package need no tags: they use
+		// the operating system's profile.
+		if !process.IsAndroidSystemUID(p.UserID) {
+			log.Warningf("tags: failed to get android app info for uid %d: %s", p.UserID, err)
+		}
 		return
 	}
 

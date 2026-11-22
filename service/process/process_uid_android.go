@@ -120,7 +120,10 @@ func loadProcessByUID(ctx context.Context, key string, uid int) (*Process, error
 
 	info, err := aconn.GetAppInfo(uid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get app info for uid %d: %w", uid, err)
+		if !IsAndroidSystemUID(uid) {
+			return nil, fmt.Errorf("failed to get app info for uid %d: %w", uid, err)
+		}
+		info = androidSystemAppInfo(uid)
 	}
 
 	process := newAndroidProcess(uid, key, info, time.Now().Unix())
@@ -172,6 +175,19 @@ func newAndroidProcess(uid int, key string, info *aconn.AppInfo, firstSeen int64
 	return process
 }
 
+// androidSystemAppInfo describes a UID of Android itself that has no app
+// package, such as the DNS resolver. Its profile is the operating system's.
+// The path is the system server's identity, which binds that profile too, so
+// the profile's stored path stays the same whichever of them comes first.
+func androidSystemAppInfo(uid int) *aconn.AppInfo {
+	return &aconn.AppInfo{
+		UID:       uid,
+		Label:     fmt.Sprintf("Android system (uid %d)", uid),
+		SystemApp: true,
+		SourceDir: "android.uid.system",
+	}
+}
+
 // appPath returns the path of the app's base APK, falling back to the package
 // name if the Android side did not report one.
 func appPath(info *aconn.AppInfo) string {
@@ -204,6 +220,9 @@ func refreshAndroidIdentity(ctx context.Context, p *Process) *Process {
 		return p
 	}
 	info, err := aconn.GetAppInfo(p.UserID)
+	if (err != nil || info == nil) && IsAndroidSystemUID(p.UserID) {
+		return p
+	}
 	if err != nil || info == nil {
 		log.Tracer(ctx).Debugf("process: dropping stored app for uid %d: %v", p.UserID, err)
 		p.Delete()

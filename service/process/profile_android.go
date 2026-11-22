@@ -18,7 +18,19 @@ const (
 	rootUID = 0
 	// androidSystemUID is the UID of the Android system server (android.uid.system).
 	androidSystemUID = 1000
+	// androidDNSUID is the UID of Android's DNS resolver (AID_DNS). It makes
+	// lookups for Android itself, such as checking that Private DNS works;
+	// apps' own lookups carry the app's UID.
+	androidDNSUID = 1051
 )
+
+// IsAndroidSystemUID reports whether uid is a service of Android itself, so
+// its traffic belongs to the operating system even when, like the DNS
+// resolver, it has no app package to look up. Root is left out: traffic of
+// root processes on a rooted phone stays unidentified.
+func IsAndroidSystemUID(uid int) bool {
+	return uid == androidSystemUID || uid == androidDNSUID
+}
 
 // getSpecialProfileID returns the special profile ID for the app, if any.
 //
@@ -31,14 +43,15 @@ func (p *Process) getSpecialProfileID() (specialProfileID string) {
 		specialProfileID = profile.UnidentifiedProfileID
 	case UnsolicitedProcessID:
 		specialProfileID = profile.UnsolicitedProfileID
-	case rootUID, androidSystemUID:
+	case rootUID:
 		specialProfileID = profile.SystemProfileID
 	case ownUID:
 		specialProfileID = profile.PortmasterProfileID
+	default:
+		if IsAndroidSystemUID(p.UserID) {
+			specialProfileID = profile.SystemProfileID
+		}
 	}
-
-	// There is no system resolver to detect: on Android DNS goes through the
-	// system server, which is already covered by androidSystemUID above.
 
 	return specialProfileID
 }

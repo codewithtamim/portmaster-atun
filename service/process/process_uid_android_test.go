@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/safing/portmaster/base/utils/aconn"
+	"github.com/safing/portmaster/service/profile"
 )
 
 func TestAndroidIdentityUnchanged(t *testing.T) {
@@ -58,5 +59,50 @@ func TestRefreshDropsAppThatCanNoLongerBeLookedUp(t *testing.T) { //nolint:paral
 	}
 	if _, ok := GetProcessFromStorage(key); ok {
 		t.Fatal("stale app identity is still stored")
+	}
+}
+
+// Android's DNS resolver has no app package. Its traffic is the operating
+// system's, not an unknown app's.
+func TestAndroidDNSResolverIsTheOperatingSystem(t *testing.T) {
+	if !IsAndroidSystemUID(androidDNSUID) {
+		t.Fatal("DNS resolver UID not part of Android")
+	}
+	p := &Process{UserID: androidDNSUID}
+	if got := p.getSpecialProfileID(); got != profile.SystemProfileID {
+		t.Fatalf("profile %q, want %q", got, profile.SystemProfileID)
+	}
+	if !IsAndroidSystemUID(androidSystemUID) {
+		t.Fatal("system server UID not part of Android")
+	}
+	if IsAndroidSystemUID(10123) {
+		t.Fatal("app UID counted as part of Android")
+	}
+	if IsAndroidSystemUID(rootUID) {
+		t.Fatal("root counted as an Android service")
+	}
+}
+
+func TestStoredAndroidSystemProcessIsKeptWithoutAppInfo(t *testing.T) { //nolint:paralleltest // process storage is global
+	aconn.RegisterAppInfoProvider(nil)
+
+	if got := androidSystemAppInfo(androidDNSUID); androidIdentityPath(got) != "android.uid.system" {
+		t.Fatalf("path %q, want the system server's identity", androidIdentityPath(got))
+	}
+
+	key := getAndroidProcessKey(androidDNSUID)
+	stored := newAndroidProcess(androidDNSUID, key, androidSystemAppInfo(androidDNSUID), 1)
+	stored.Save()
+	t.Cleanup(func() {
+		processesLock.Lock()
+		delete(processes, key)
+		processesLock.Unlock()
+	})
+
+	if got := refreshAndroidIdentity(context.Background(), stored); got != stored {
+		t.Fatalf("got %+v, want the stored process kept", got)
+	}
+	if _, ok := GetProcessFromStorage(key); !ok {
+		t.Fatal("Android system process dropped")
 	}
 }
