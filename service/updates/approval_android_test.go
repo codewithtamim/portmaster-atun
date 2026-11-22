@@ -782,3 +782,94 @@ func TestFileFromAnEarlierAttemptCountsTowardTheStagedTotal(t *testing.T) {
 			progress.DownloadedBytes, progress.TotalBytes, len(newList), len(newList))
 	}
 }
+
+func TestBundleStorageShortfallReportsStorageInsteadOfOfferingDownload(t *testing.T) {
+	serveDir := t.TempDir()
+	generateNewerLists(t, serveDir)
+	srv := httptest.NewServer(http.FileServer(http.Dir(serveDir)))
+	t.Cleanup(srv.Close)
+	setArtifactURLs(t, serveDir, srv.URL)
+
+	installedDir := filepath.Join(t.TempDir(), "intel")
+	if err := os.WriteFile(installedDir+".storage", []byte("117000000"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u, err := New(&testInstance{}, "Test", Config{
+		Name:              intelUpdaterName,
+		Directory:         installedDir,
+		DownloadDirectory: t.TempDir(),
+		PurgeDirectory:    t.TempDir(),
+		IndexFile:         "index.json",
+		AutoCheck:         true,
+		AutoDownload:      true,
+		AutoApply:         true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.cfg.IndexURLs = []string{srv.URL + "/index.json"}
+	setMetered(t, false)
+
+	runStage(t, u)
+
+	progress := u.Progress()
+	if progress.State != ProgressStorage {
+		t.Fatalf("state %q, want %q", progress.State, ProgressStorage)
+	}
+	if progress.RequiredBytes != 117_000_000 {
+		t.Fatalf("requiredBytes %d, want 117000000", progress.RequiredBytes)
+	}
+
+	// Once space is freed and the bundled lists are unpacked into place, the
+	// updater adopts them without downloading from the server.
+	if err := GenerateMockFolder(installedDir, "Test", "1.0.0", testPublished); err != nil {
+		t.Fatal(err)
+	}
+	if !u.adoptBundledIntel() {
+		t.Fatal("expected unpacked bundled lists to be adopted")
+	}
+	if _, err := os.Stat(u.bundleStorageMarker()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("storage marker still present: %v", err)
+	}
+	if u.index == nil || u.index.Version != "1.0.0" {
+		t.Fatalf("adopted index %v, want version 1.0.0", u.index)
+	}
+}
+
+func TestStageDoesNotOfferDownloadLargerThanAvailableStorage(t *testing.T) {
+	serveDir := t.TempDir()
+	generateNewerLists(t, serveDir)
+	srv := httptest.NewServer(http.FileServer(http.Dir(serveDir)))
+	t.Cleanup(srv.Close)
+	setArtifactURLs(t, serveDir, srv.URL)
+
+	u, err := New(&testInstance{}, "Test", Config{
+		Name:              intelUpdaterName,
+		Directory:         t.TempDir(),
+		DownloadDirectory: t.TempDir(),
+		PurgeDirectory:    t.TempDir(),
+		IndexFile:         "index.json",
+		AutoCheck:         true,
+		AutoDownload:      true,
+		AutoApply:         true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.cfg.IndexURLs = []string{srv.URL + "/index.json"}
+	setMetered(t, false)
+
+	prev := availableDiskBytes
+	availableDiskBytes = func(string) (int64, bool) { return 8, true }
+	t.Cleanup(func() { availableDiskBytes = prev })
+
+	runStage(t, u)
+
+	progress := u.Progress()
+	if progress.State != ProgressStorage {
+		t.Fatalf("state %q, want %q", progress.State, ProgressStorage)
+	}
+	if progress.RequiredBytes <= 8 {
+		t.Fatalf("requiredBytes %d, want download size > 8", progress.RequiredBytes)
+	}
+}

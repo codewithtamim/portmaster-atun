@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"syscall"
 	"time"
 
 	"github.com/safing/portmaster/base/api"
@@ -43,10 +44,12 @@ func (u *Updater) registerIntelAPI() error {
 		return err
 	}
 
+	u.adoptBundledIntel()
 	return nil
 }
 
 func (u *Updater) handleIntelProgress(_ *api.Request) (any, error) {
+	u.adoptBundledIntel()
 	return u.Progress(), nil
 }
 
@@ -109,6 +112,22 @@ func (u *Updater) handleIntelForceUpdate(_ *api.Request) (string, error) {
 
 		finished := u.attemptsFinished.Load()
 		err := u.waitForRunningUpdate(w.Ctx())
+		if err == nil {
+			if u.adoptBundledIntel() {
+				u.clearApproval()
+				u.attemptsFinished.Add(1)
+				return nil
+			}
+			u.indexLock.Lock()
+			installed := u.index != nil && len(u.index.Artifacts) > 0
+			u.indexLock.Unlock()
+			if !installed {
+				if need := u.bundleStorageShortfall(); need > 0 {
+					u.requiredBytes.Store(need)
+					err = syscall.ENOSPC
+				}
+			}
+		}
 		if err == nil {
 			err = u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
 		}

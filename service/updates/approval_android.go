@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -135,6 +137,101 @@ func (u *Updater) clearApproval() {
 	}
 }
 
+// availableDiskBytes returns the bytes available to an unprivileged process on
+// the filesystem holding dir, or false when the filesystem cannot be read.
+var availableDiskBytes = statfsAvailableBytes
+
+func statfsAvailableBytes(dir string) (int64, bool) {
+	target := filepath.Clean(dir)
+	for {
+		var st syscall.Statfs_t
+		if err := syscall.Statfs(target, &st); err == nil {
+			return int64(st.Bavail) * int64(st.Bsize), true
+		}
+		parent := filepath.Dir(target)
+		if parent == target {
+			return 0, false
+		}
+		target = parent
+	}
+}
+
+func (u *Updater) hasStorageFor(needed int64) bool {
+	if needed <= 0 {
+		return true
+	}
+	avail, ok := availableDiskBytes(u.cfg.Directory)
+	return !ok || avail >= needed
+}
+
+// bundleStorageMarker is written beside the list directory when the app could
+// not unpack the bundled filter lists for lack of disk space. It holds the
+// byte size of the bundle that failed to unpack.
+func (u *Updater) bundleStorageMarker() string {
+	return filepath.Clean(u.cfg.Directory) + ".storage"
+}
+
+func (u *Updater) bundleStorageShortfall() int64 {
+	if !u.holdsIntelForApproval() {
+		return 0
+	}
+	data, err := os.ReadFile(u.bundleStorageMarker())
+	if err != nil {
+		return 0
+	}
+	need, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil || need <= 0 {
+		return 0
+	}
+	return need
+}
+
+func (u *Updater) clearBundleStorageMarker() {
+	if !u.holdsIntelForApproval() {
+		return
+	}
+	if err := os.Remove(u.bundleStorageMarker()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warningf("updates/%s: failed to clear the bundle storage marker: %s", u.cfg.Name, err)
+	}
+}
+
+// adoptBundledIntel loads bundled lists that were unpacked after the updater
+// started without an index, and otherwise reports a pending bundle storage
+// shortfall so the app can ask the user to free space.
+func (u *Updater) adoptBundledIntel() bool {
+	if !u.holdsIntelForApproval() {
+		return false
+	}
+	u.indexLock.Lock()
+	installed := u.index != nil && len(u.index.Artifacts) > 0
+	u.indexLock.Unlock()
+	if installed {
+		u.clearBundleStorageMarker()
+		return false
+	}
+
+	indexPath := filepath.Join(u.cfg.Directory, u.cfg.IndexFile)
+	if index, err := LoadIndex(indexPath, u.cfg.Platform, u.cfg.Verify); err == nil && len(index.Artifacts) > 0 {
+		if verifyErr := index.VerifyArtifacts(u.cfg.Directory); verifyErr == nil {
+			u.indexLock.Lock()
+			u.index = index
+			u.corruptedInstallation = nil
+			u.indexLock.Unlock()
+			u.clearBundleStorageMarker()
+			u.requiredBytes.Store(0)
+			u.setProgressState(ProgressRebuilding)
+			u.EventResourcesUpdated.Submit(struct{}{})
+			return true
+		}
+	}
+
+	if need := u.bundleStorageShortfall(); need > 0 {
+		u.requiredBytes.Store(need)
+		u.setStagedState(ProgressStorage)
+	}
+	return false
+}
+
 // endApprovedAttempt ends the approval once its download is done or there is
 // nothing to download, and otherwise schedules the next try. A full disk ends
 // it too: trying again cannot help until space is freed, and the user is shown
@@ -235,10 +332,20 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 	}
 	defer u.isUpdateRunning.UnSet()
 
+	if u.adoptBundledIntel() {
+		return false, false, nil
+	}
 	corrupted := u.corruptedInstallation != nil
 	u.indexLock.Lock()
 	installed := u.index != nil && len(u.index.Artifacts) > 0
 	u.indexLock.Unlock()
+	if !installed {
+		if need := u.bundleStorageShortfall(); need > 0 {
+			u.requiredBytes.Store(need)
+			u.setStagedState(ProgressStorage)
+			return false, false, nil
+		}
+	}
 	downloader := NewDownloader(u, u.getIndexURLsWithLock())
 	if err := downloader.updateIndex(w.Ctx()); err != nil {
 		// With no lists installed there is nothing to fall back on, so the
@@ -283,6 +390,14 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 
 	sizes, total, known := pendingArtifactBytes(w.Ctx(), downloader.index, installedChecksums(current, corrupted))
 	if u.forcePending.Load() {
+		return false, false, nil
+	}
+	if total > 0 && !u.hasStorageFor(total) {
+		if !installed {
+			u.requiredBytes.Store(total)
+			u.setStagedState(ProgressStorage)
+		}
+		log.Warningf("updates/%s: not offering %d-byte download: not enough storage", u.cfg.Name, total)
 		return false, false, nil
 	}
 	if known && total == 0 && current != nil {

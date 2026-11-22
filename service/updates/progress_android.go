@@ -204,6 +204,7 @@ func (u *Updater) endProgress(err error) {
 
 	switch {
 	case err == nil:
+		u.clearBundleStorageMarker()
 		u.clearPartialDownloads()
 		// A repair installs the same version again, so it is not a download
 		// the user approved.
