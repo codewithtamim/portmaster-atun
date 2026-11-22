@@ -123,7 +123,7 @@ func (u *Updater) Progress() Progress {
 		CacheTotalBytes:  u.cacheTotalBytes.Load(),
 		AttemptsFinished: u.attemptsFinished.Load(),
 		Repairing:        u.repairing.Load(),
-		FirstDownload:    u.holdsIntelForApproval() && !u.downloadedSinceInstall(),
+		FirstDownload:    u.BuiltInListsInUse(),
 	}
 }
 

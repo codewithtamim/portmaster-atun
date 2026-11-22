@@ -28,6 +28,11 @@ type Snapshot struct {
 	Selected        []string   `json:"selected"`
 	Categories      []Category `json:"categories"`
 	Sources         []Source   `json:"sources"`
+	// BuiltIn is set while the lists in place are the ones bundled with the
+	// app: LastUpdatedUnix is then when they were copied in, not downloaded.
+	BuiltIn bool `json:"builtIn,omitempty"`
+	// PublishedUnix is when the installed lists were released, zero if unknown.
+	PublishedUnix int64 `json:"publishedUnix,omitempty"`
 }
 
 type selectionBody struct {
@@ -89,6 +94,12 @@ func currentSnapshot() Snapshot {
 		LastUpdatedUnix: snapshotLastUpdatedUnix(),
 		Categories:      []Category{},
 		Sources:         []Source{},
+	}
+
+	updater := module.instance.IntelUpdates()
+	snap.BuiltIn = updater.BuiltInListsInUse()
+	if published := updater.InstalledPublished(); !published.IsZero() {
+		snap.PublishedUnix = published.Unix()
 	}
 
 	if ver, err := getCacheDatabaseVersion(); err == nil {

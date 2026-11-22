@@ -54,6 +54,24 @@ func (u *Updater) downloadedSinceInstall() bool {
 	return err == nil
 }
 
+// BuiltInListsInUse reports whether the intel lists in place, if any, are the
+// ones bundled with the app, because no download has finished since install.
+func (u *Updater) BuiltInListsInUse() bool {
+	return u.holdsIntelForApproval() && !u.downloadedSinceInstall()
+}
+
+// InstalledPublished returns when the installed index was released. It is the
+// zero time without an index, or when the index was built from local files and
+// its date is only the time of that scan.
+func (u *Updater) InstalledPublished() time.Time {
+	u.indexLock.Lock()
+	defer u.indexLock.Unlock()
+	if u.index == nil || u.index.isLocallyGenerated {
+		return time.Time{}
+	}
+	return u.index.Published
+}
+
 // noteDownloaded records that intel lists were downloaded, so later updates on
 // an unmetered network no longer wait for approval. A failed write only means
 // the user is asked once more.

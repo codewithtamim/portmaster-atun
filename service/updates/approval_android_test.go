@@ -401,3 +401,33 @@ func TestCheckFailureShown(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltInListsReportTheirReleaseDate(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.0", testPublished); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+
+	if !u.BuiltInListsInUse() {
+		t.Fatal("lists in place before any download not reported as built in")
+	}
+	if got := u.InstalledPublished(); !got.Equal(testPublished) {
+		t.Fatalf("published %s, want %s", got, testPublished)
+	}
+
+	markDownloaded(t, u)
+	if u.BuiltInListsInUse() {
+		t.Fatal("lists still reported as built in after a download")
+	}
+}
+
+func TestOtherUpdatersHaveNoBuiltInLists(t *testing.T) {
+	u := &Updater{}
+	if u.BuiltInListsInUse() {
+		t.Fatal("an updater that is not intel reported built-in lists")
+	}
+	if got := u.InstalledPublished(); !got.IsZero() {
+		t.Fatalf("published %s without an index, want zero", got)
+	}
+}
