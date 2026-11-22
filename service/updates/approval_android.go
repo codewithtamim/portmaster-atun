@@ -281,10 +281,16 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 		return false, true, nil
 	}
 
-	total := pendingArtifactBytes(w.Ctx(), downloader.index)
+	sizes, total, known := pendingArtifactBytes(w.Ctx(), downloader.index, installedChecksums(current, corrupted))
 	if u.forcePending.Load() {
 		return false, false, nil
 	}
+	if known && total == 0 && current != nil {
+		// Every file is installed already: only the index changes, which
+		// costs no download to approve.
+		return false, true, nil
+	}
+	u.stagedSizes.Store(sizes)
 	u.downloadedBytes.Store(0)
 	u.totalBytes.Store(total)
 	// An unknown size is not kept: the download then sums the sizes its
@@ -313,36 +319,57 @@ func (u *Updater) setStagedState(state string) {
 	u.setProgressState(state)
 }
 
-// pendingArtifactBytes is the download size of the index's artifacts, or 0
-// when it is unknown. One artifact that cannot be sized, from a failed
-// request or an error response, makes the whole size unknown: a partial sum
-// would be shown as the size and let the progress bar run past 100%.
-func pendingArtifactBytes(ctx context.Context, index *Index) int64 {
+// installedChecksums returns the checksums of the installed files. The
+// download copies these from disk instead of fetching them. It is empty when
+// the installed files are broken, since the broken ones are fetched again.
+func installedChecksums(current *Index, corrupted bool) map[string]bool {
+	installed := make(map[string]bool)
+	if current == nil || corrupted {
+		return installed
+	}
+	for _, artifact := range current.Artifacts {
+		if artifact != nil && artifact.SHA256 != "" {
+			installed[artifact.SHA256] = true
+		}
+	}
+	return installed
+}
+
+// pendingArtifactBytes is the download size of the index's artifacts that are
+// not installed yet, by checksum and in total. known is false when the size is
+// unknown: one artifact that cannot be sized, from a failed request or an
+// error response, makes the whole size unknown, since a partial sum would be
+// shown as the size and let the progress bar run past 100%.
+func pendingArtifactBytes(ctx context.Context, index *Index, installed map[string]bool) (sizes map[string]int64, total int64, known bool) {
 	if index == nil {
-		return 0
+		return nil, 0, false
 	}
 	client := http.Client{Timeout: 15 * time.Second}
-	var total int64
+	sizes = make(map[string]int64)
 	for _, artifact := range index.Artifacts {
-		if artifact == nil || len(artifact.URLs) == 0 {
+		if artifact == nil || installed[artifact.SHA256] {
 			continue
+		}
+		if len(artifact.URLs) == 0 {
+			return nil, 0, false
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, artifact.URLs[0], nil)
 		if err != nil {
 			log.Debugf("updates: failed to build HEAD request for %s: %s", artifact.URLs[0], err)
-			return 0
+			return nil, 0, false
 		}
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Debugf("updates: failed to size artifact %s: %s", artifact.URLs[0], err)
-			return 0
+			return nil, 0, false
 		}
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK || resp.ContentLength <= 0 {
 			log.Debugf("updates: no size for artifact %s: status %d", artifact.URLs[0], resp.StatusCode)
-			return 0
+			return nil, 0, false
 		}
+		sizes[artifact.SHA256] = resp.ContentLength
 		total += resp.ContentLength
 	}
-	return total
+	return sizes, total, true
 }

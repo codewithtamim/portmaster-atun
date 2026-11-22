@@ -33,7 +33,8 @@ type progressTracker struct {
 	progressState               atomic.Value // string, one of the Progress* states
 	downloadedBytes             atomic.Int64
 	totalBytes                  atomic.Int64
-	totalStaged                 atomic.Bool // totalBytes was set by stageIntelForApproval
+	totalStaged                 atomic.Bool  // totalBytes was set by stageIntelForApproval
+	stagedSizes                 atomic.Value // map[string]int64, each staged artifact's size by checksum
 	requiredBytes               atomic.Int64
 	cacheLoadedBytes            atomic.Int64
 	cacheTotalBytes             atomic.Int64
@@ -245,7 +246,16 @@ func (u *Updater) endAppliedUpdate() {
 
 // countExistingFile counts an artifact that is already on disk as downloaded,
 // so the bar reaches 100% when only some artifacts changed.
-func (d *Downloader) countExistingFile(path string) {
+//
+// A total staged for approval leaves out the installed files. A file it
+// counted can still be on disk, kept from an earlier attempt, and is counted
+// with its staged size.
+func (d *Downloader) countExistingFile(path, sha256 string) {
+	if d.u.totalStaged.Load() {
+		sizes, _ := d.u.stagedSizes.Load().(map[string]int64)
+		d.u.addDownloaded(sizes[sha256])
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return

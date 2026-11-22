@@ -82,6 +82,18 @@ func setArtifactURLs(t *testing.T, dir, baseURL string) {
 
 var testPublished = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
+// generateNewerLists writes version 1.0.1 of the mock lists into dir, with one
+// file the installed 1.0.0 lacks, so the update has something to download.
+func generateNewerLists(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "new-list"), []byte("mock:new-list"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := GenerateMockFolder(dir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func runStage(t *testing.T, u *Updater) {
 	t.Helper()
 	m := mgr.New("updates stage test")
@@ -125,9 +137,7 @@ func TestStageWithCorruptedIntelAndNoIndexIsNotReady(t *testing.T) {
 
 func TestStageWithCorruptedIntelAndNewerIndexWaitsForApproval(t *testing.T) {
 	serveDir := t.TempDir()
-	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	generateNewerLists(t, serveDir)
 	u, _ := newCorruptedIntel(t, serveDir)
 
 	runStage(t, u)
@@ -214,9 +224,7 @@ func markDownloaded(t *testing.T, u *Updater) {
 
 func TestStageFirstDownloadWaitsForApprovalOnUnmeteredNetwork(t *testing.T) {
 	serveDir := t.TempDir()
-	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	generateNewerLists(t, serveDir)
 	u := newHealthyIntel(t, serveDir)
 	setMetered(t, false)
 
@@ -264,9 +272,7 @@ func TestApprovedDownloadIsRecorded(t *testing.T) {
 // or the progress bar runs past 100%.
 func TestUnsizedArtifactsDoNotPushProgressPastTheTotal(t *testing.T) {
 	serveDir := t.TempDir()
-	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	generateNewerLists(t, serveDir)
 	u := newHealthyIntel(t, serveDir)
 	files := http.FileServer(http.Dir(serveDir))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,9 +322,7 @@ func TestRepairIsNotRecordedAsDownload(t *testing.T) {
 
 func TestStageWaitsForApprovalOnMeteredNetwork(t *testing.T) {
 	serveDir := t.TempDir()
-	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	generateNewerLists(t, serveDir)
 	u := newHealthyIntel(t, serveDir)
 	setMetered(t, true)
 
@@ -622,9 +626,7 @@ func TestApprovedFirstDownloadContinuesWithoutLists(t *testing.T) {
 // Approving on Wi-Fi does not approve mobile data: there the user is asked again.
 func TestApprovedDownloadWaitsForApprovalOnMeteredNetwork(t *testing.T) {
 	serveDir := t.TempDir()
-	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
-		t.Fatal(err)
-	}
+	generateNewerLists(t, serveDir)
 	u := newHealthyIntel(t, serveDir)
 	setMetered(t, true)
 	u.noteApproval()
@@ -666,5 +668,117 @@ func TestFullDiskEndsTheApproval(t *testing.T) {
 	}
 	if status := u.updateCheckWorkerMgr.Status(); status == "delayed" {
 		t.Fatal("retry scheduled on a full disk")
+	}
+}
+
+// The size asked for is what will download: files already installed with the
+// same content are copied from disk, not fetched.
+func TestStagedSizeLeavesOutInstalledFiles(t *testing.T) {
+	serveDir := t.TempDir()
+	newList := []byte("mock:new-list")
+	if err := os.WriteFile(filepath.Join(serveDir, "new-list"), newList, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, true)
+
+	runStage(t, u)
+
+	progress := u.Progress()
+	if progress.State != ProgressAwaitingApproval {
+		t.Fatalf("state %q, want %q", progress.State, ProgressAwaitingApproval)
+	}
+	if progress.TotalBytes != int64(len(newList)) {
+		t.Fatalf("staged %d bytes, want %d for the one new file", progress.TotalBytes, len(newList))
+	}
+
+	m := mgr.New("updates approve test")
+	if err := m.Do("approve", func(w *mgr.WorkerCtx) error {
+		return u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	progress = u.Progress()
+	if progress.DownloadedBytes != int64(len(newList)) || progress.TotalBytes != int64(len(newList)) {
+		t.Fatalf("downloaded %d of %d bytes, want %d of %d",
+			progress.DownloadedBytes, progress.TotalBytes, len(newList), len(newList))
+	}
+}
+
+// Broken installed files are fetched again, so they count toward the size.
+func TestStagedSizeCountsBrokenInstalledFiles(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u, srv := newCorruptedIntel(t, serveDir)
+	setArtifactURLs(t, serveDir, srv.URL)
+
+	runStage(t, u)
+
+	var want int64
+	for _, name := range []string{"portmaster", "portmaster-core", "portmaster.zip", "assets.zip"} {
+		info, err := os.Stat(filepath.Join(serveDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want += info.Size()
+	}
+	if progress := u.Progress(); progress.TotalBytes != want {
+		t.Fatalf("staged %d bytes, want %d for every file (state %q)", progress.TotalBytes, want, progress.State)
+	}
+}
+
+// A newer index whose files are all installed costs no download, so it is
+// installed without asking, even on mobile data.
+func TestNewerIndexWithInstalledFilesNeedsNoApproval(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, true)
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state == ProgressAwaitingApproval {
+		t.Fatal("asked to approve a download of nothing")
+	}
+	if got := u.index.Version; got != "1.0.1" {
+		t.Fatalf("installed version %q, want 1.0.1", got)
+	}
+}
+
+// A file kept from an earlier attempt is copied, not fetched, and still moves
+// the bar, so it reaches the staged total.
+func TestFileFromAnEarlierAttemptCountsTowardTheStagedTotal(t *testing.T) {
+	serveDir := t.TempDir()
+	newList := []byte("mock:new-list")
+	if err := os.WriteFile(filepath.Join(serveDir, "new-list"), newList, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, true)
+	runStage(t, u)
+	if err := os.WriteFile(filepath.Join(u.cfg.DownloadDirectory, "new-list"), newList, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := mgr.New("updates approve test")
+	if err := m.Do("approve", func(w *mgr.WorkerCtx) error {
+		return u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	progress := u.Progress()
+	if progress.DownloadedBytes != progress.TotalBytes || progress.TotalBytes != int64(len(newList)) {
+		t.Fatalf("downloaded %d of %d bytes, want %d of %d",
+			progress.DownloadedBytes, progress.TotalBytes, len(newList), len(newList))
 	}
 }

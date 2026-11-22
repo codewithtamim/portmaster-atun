@@ -26,4 +26,4 @@ func (d *Downloader) readBody(resp *http.Response, _ string, _ int64) ([]byte, e
 	return io.ReadAll(resp.Body)
 }
 
-func (d *Downloader) countExistingFile(string) {}
+func (d *Downloader) countExistingFile(string, string) {}
