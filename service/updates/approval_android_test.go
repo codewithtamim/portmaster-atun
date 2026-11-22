@@ -4,10 +4,13 @@ package updates
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -429,5 +432,239 @@ func TestOtherUpdatersHaveNoBuiltInLists(t *testing.T) {
 	}
 	if got := u.InstalledPublished(); !got.IsZero() {
 		t.Fatalf("published %s without an index, want zero", got)
+	}
+}
+
+// A download the user approved continues without asking again after the app
+// was killed, as soon as the next check runs.
+func TestApprovedDownloadContinuesAfterRestart(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, false)
+	u.noteApproval()
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state == ProgressAwaitingApproval {
+		t.Fatal("approved download waited for approval again")
+	}
+	if got := u.index.Version; got != "1.0.1" {
+		t.Fatalf("installed version %q, want 1.0.1", got)
+	}
+	if u.approvalPending() {
+		t.Fatal("approval kept after its download finished")
+	}
+}
+
+// An approved download that failed is tried again soon, not at the next
+// hourly check.
+func TestFailedApprovedDownloadIsRetried(t *testing.T) {
+	serveDir := t.TempDir()
+	// A file the installed version lacks, so it must be downloaded.
+	if err := os.WriteFile(filepath.Join(serveDir, "new-list"), []byte("mock:new-list"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	// The index is served, but its files are not, as when the network drops
+	// after the index arrived.
+	setArtifactURLs(t, serveDir, u.cfg.IndexURLs[0]+"/gone")
+	setMetered(t, false)
+	u.noteApproval()
+
+	runStage(t, u)
+
+	if got := u.index.Version; got != "1.0.0" {
+		t.Fatalf("installed version %q, want 1.0.0", got)
+	}
+	if !u.approvalPending() {
+		t.Fatal("approval dropped after a failed download")
+	}
+	if status := u.updateCheckWorkerMgr.Status(); status != "delayed" {
+		t.Fatalf("check worker %q, want a retry scheduled", status)
+	}
+	if got := time.Duration(u.approvedRetryDelay.Load()); got != approvedRetryFirst {
+		t.Fatalf("retry after %s, want %s", got, approvedRetryFirst)
+	}
+}
+
+// Without a network the check itself fails; the approved download is still
+// tried again soon.
+func TestApprovedDownloadIsRetriedWhenTheCheckFails(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	if err := os.Remove(filepath.Join(serveDir, "index.json")); err != nil {
+		t.Fatal(err)
+	}
+	setMetered(t, false)
+	u.noteApproval()
+
+	runStage(t, u)
+
+	if status := u.updateCheckWorkerMgr.Status(); status != "delayed" {
+		t.Fatalf("check worker %q, want a retry scheduled", status)
+	}
+}
+
+// newIdleIntel returns an intel updater with intact lists and a server that
+// offers the same version.
+func newIdleIntel(t *testing.T) *Updater {
+	t.Helper()
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.0", testPublished); err != nil {
+		t.Fatal(err)
+	}
+	return newHealthyIntel(t, serveDir)
+}
+
+func TestApprovedDownloadRetriesWaitLongerUntilUsedUp(t *testing.T) {
+	u := newIdleIntel(t)
+	u.noteApproval()
+
+	var waits []time.Duration
+	for range 6 {
+		u.endApprovedAttempt(errors.New("network down"))
+		waits = append(waits, time.Duration(u.approvedRetryDelay.Load()))
+	}
+
+	want := []time.Duration{
+		30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute,
+		8 * time.Minute, 16 * time.Minute,
+	}
+	for i, w := range want {
+		if waits[i] != w {
+			t.Fatalf("wait %d is %s, want %s (all: %v)", i, waits[i], w, waits)
+		}
+	}
+}
+
+// A failure that keeps coming back ends the approval, so later checks ask the
+// user again instead of downloading.
+func TestApprovalEndsAfterRepeatedFailures(t *testing.T) {
+	u := newIdleIntel(t)
+	u.noteApproval()
+
+	for range 7 {
+		u.endApprovedAttempt(errors.New("bad signature"))
+	}
+
+	if u.approvalPending() {
+		t.Fatal("approval kept after repeated failures")
+	}
+}
+
+func TestOldApprovalIsIgnored(t *testing.T) {
+	u := newIdleIntel(t)
+	u.noteApproval()
+	old := time.Now().Add(-approvalMaxAge - time.Minute)
+	if err := os.Chtimes(u.approvalMarker(), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if u.approvalPending() {
+		t.Fatal("approval from over a day ago still used")
+	}
+}
+
+func TestNoRetryWhileAutomaticChecksAreOff(t *testing.T) {
+	u := newIdleIntel(t)
+	u.cfg.AutoCheck = false
+	u.noteApproval()
+
+	u.endApprovedAttempt(errors.New("network down"))
+
+	if status := u.updateCheckWorkerMgr.Status(); status == "delayed" {
+		t.Fatal("retry scheduled with automatic checks off")
+	}
+}
+
+// The first download, with no lists installed, continues after a restart too.
+func TestApprovedFirstDownloadContinuesWithoutLists(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.FileServer(http.Dir(serveDir)))
+	t.Cleanup(srv.Close)
+	setArtifactURLs(t, serveDir, srv.URL)
+	u, err := New(&testInstance{}, "Test", Config{
+		Name:              intelUpdaterName,
+		Directory:         t.TempDir(),
+		DownloadDirectory: t.TempDir(),
+		PurgeDirectory:    t.TempDir(),
+		IndexFile:         "index.json",
+		AutoCheck:         true,
+		AutoDownload:      true,
+		AutoApply:         true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.cfg.IndexURLs = []string{srv.URL + "/index.json"}
+	setMetered(t, false)
+	u.noteApproval()
+
+	runStage(t, u)
+
+	if u.index == nil || u.index.Version != "1.0.1" {
+		t.Fatal("approved first download did not continue")
+	}
+}
+
+// Approving on Wi-Fi does not approve mobile data: there the user is asked again.
+func TestApprovedDownloadWaitsForApprovalOnMeteredNetwork(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.1", testPublished.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, true)
+	u.noteApproval()
+
+	runStage(t, u)
+
+	if state := u.Progress().State; state != ProgressAwaitingApproval {
+		t.Fatalf("state %q, want %q", state, ProgressAwaitingApproval)
+	}
+	if got := u.index.Version; got != "1.0.0" {
+		t.Fatalf("installed version %q on mobile data, want 1.0.0", got)
+	}
+}
+
+func TestApprovalEndsWhenNothingIsNewer(t *testing.T) {
+	serveDir := t.TempDir()
+	if err := GenerateMockFolder(serveDir, "Test", "1.0.0", testPublished); err != nil {
+		t.Fatal(err)
+	}
+	u := newHealthyIntel(t, serveDir)
+	setMetered(t, false)
+	u.noteApproval()
+
+	runStage(t, u)
+
+	if u.approvalPending() {
+		t.Fatal("approval kept with nothing to download")
+	}
+}
+
+func TestFullDiskEndsTheApproval(t *testing.T) {
+	u := newIdleIntel(t)
+	u.noteApproval()
+
+	u.endApprovedAttempt(fmt.Errorf("write: %w", syscall.ENOSPC))
+
+	if u.approvalPending() {
+		t.Fatal("approval kept after the disk filled up")
+	}
+	if status := u.updateCheckWorkerMgr.Status(); status == "delayed" {
+		t.Fatal("retry scheduled on a full disk")
 	}
 }

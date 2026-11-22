@@ -100,6 +100,7 @@ func (u *Updater) handleIntelForceUpdate(_ *api.Request) (string, error) {
 	if !u.forcePending.CompareAndSwap(false, true) {
 		return "Intel update already started.", nil
 	}
+	u.noteApproval()
 	// Set before returning, so a client polling after this request never reads
 	// the state from before it.
 	u.setProgressState(ProgressChecking)
@@ -115,9 +116,11 @@ func (u *Updater) handleIntelForceUpdate(_ *api.Request) (string, error) {
 		if u.attemptsFinished.Load() == finished {
 			u.endProgress(err)
 		}
+		u.endApprovedAttempt(err)
 		// Never return the error: the manager re-runs failed workers forever,
-		// which would repeat a failed download unasked, even on mobile data, and
-		// flip the state the user sees. The outcome is in the progress state.
+		// which would repeat a failed download at once, even on mobile data, and
+		// flip the state the user sees. The outcome is in the progress state,
+		// and endApprovedAttempt schedules the next try.
 		if err != nil && !errors.Is(err, ErrSameIndex) && !errors.Is(err, ErrNoUpdateAvailable) {
 			log.Warningf("updates/%s: update failed: %s", u.cfg.Name, err)
 		}

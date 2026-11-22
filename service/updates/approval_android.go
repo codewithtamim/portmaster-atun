@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/safing/portmaster/base/log"
@@ -29,6 +30,20 @@ func checkFailureShown(failures int32, state aconn.DeviceState) bool {
 	connected := (state.Wifi || state.Cellular) && !state.Captive
 	return connected && failures >= checkFailureShownAfter
 }
+
+// A download the user approved that failed is tried again after
+// approvedRetryFirst, then after twice the wait each time, up to
+// approvedRetryLast. After that the hourly check keeps trying. The short
+// first wait catches a network that dropped for a moment.
+const (
+	approvedRetryFirst = 30 * time.Second
+	approvedRetryLast  = 16 * time.Minute
+)
+
+// approvalMaxAge ends an approval whose download did not finish within a day,
+// for example because the app was not opened again. The user is then asked
+// again for the lists of that day.
+const approvalMaxAge = 24 * time.Hour
 
 func (u *Updater) holdsIntelForApproval() bool {
 	return u.cfg.Name == intelUpdaterName
@@ -84,6 +99,79 @@ func (u *Updater) noteDownloaded() {
 	}
 }
 
+// approvalMarker is a file beside the installed lists that exists from the
+// user's request for a download until that download ends. It is on disk so
+// that the approval outlives the process: a download interrupted by a lost
+// network or a killed app continues without asking again.
+func (u *Updater) approvalMarker() string {
+	return filepath.Clean(u.cfg.Directory) + ".approved"
+}
+
+// noteApproval records the user's request for a download. A failed write only
+// means an interrupted download waits for the user again.
+func (u *Updater) noteApproval() {
+	u.approvedRetryDelay.Store(0)
+	if err := os.WriteFile(u.approvalMarker(), nil, 0o600); err != nil {
+		log.Warningf("updates/%s: failed to record the approved download: %s", u.cfg.Name, err)
+	}
+}
+
+func (u *Updater) approvalPending() bool {
+	info, err := os.Stat(u.approvalMarker())
+	if err != nil {
+		return false
+	}
+	if time.Since(info.ModTime()) > approvalMaxAge {
+		u.clearApproval()
+		return false
+	}
+	return true
+}
+
+func (u *Updater) clearApproval() {
+	u.approvedRetryDelay.Store(0)
+	if err := os.Remove(u.approvalMarker()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warningf("updates/%s: failed to clear the approved download: %s", u.cfg.Name, err)
+	}
+}
+
+// endApprovedAttempt ends the approval once its download is done or there is
+// nothing to download, and otherwise schedules the next try. A full disk ends
+// it too: trying again cannot help until space is freed, and the user is shown
+// how much is needed.
+func (u *Updater) endApprovedAttempt(err error) {
+	switch {
+	case err == nil, errors.Is(err, ErrSameIndex), errors.Is(err, ErrNoUpdateAvailable),
+		errors.Is(err, syscall.ENOSPC):
+		u.clearApproval()
+	case u.approvalPending():
+		u.retryApprovedDownload()
+	}
+}
+
+// retryApprovedDownload runs the next check after the current wait, which
+// doubles each time. Once the waits are used up the approval ends, so a
+// failure that keeps coming back is not downloaded again every hour: the
+// failure is shown and the user can try again. Nothing is scheduled while
+// automatic checks are off.
+func (u *Updater) retryApprovedDownload() {
+	if !u.cfg.AutoCheck {
+		return
+	}
+	delay := 2 * time.Duration(u.approvedRetryDelay.Load())
+	if delay == 0 {
+		delay = approvedRetryFirst
+	}
+	if delay > approvedRetryLast {
+		log.Warningf("updates/%s: giving up on the approved download", u.cfg.Name)
+		u.clearApproval()
+		return
+	}
+	u.approvedRetryDelay.Store(int64(delay))
+	log.Infof("updates/%s: trying the approved download again in %s", u.cfg.Name, delay)
+	u.updateCheckWorkerMgr.Delay(delay)
+}
+
 // stageIntelForApproval fetches the index and reports its size.
 //
 // When lists are already installed and intact, the network isn't metered and a
@@ -91,8 +179,10 @@ func (u *Updater) noteDownloaded() {
 // the force-update API would: lists go stale otherwise. The first download
 // after install waits for the user's approval on any network, even when the
 // lists bundled with the app are in place, and so does any download on a
-// metered network. Otherwise artifact bytes are downloaded only from the
-// force-update API.
+// metered network. A download the user approved that has not finished is
+// continued the same way, also when no lists are installed; on a metered
+// network it waits for approval again. Otherwise artifact bytes are downloaded
+// only from the force-update API.
 //
 // This is a background check the user did not ask for, so a failed fetch leaves
 // the state alone while lists are installed: nothing was being downloaded, and
@@ -106,11 +196,15 @@ func (u *Updater) noteDownloaded() {
 func (u *Updater) stageIntelForApproval(w *mgr.WorkerCtx) error {
 	repair, update, err := u.stageIntel(w)
 	if err != nil {
+		if u.approvalPending() {
+			u.retryApprovedDownload()
+		}
 		return err
 	}
 	if update {
 		log.Infof("updates/%s: downloading update on an unmetered network", u.cfg.Name)
 		err := u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+		u.endApprovedAttempt(err)
 		if err != nil && !errors.Is(err, ErrSameIndex) && !errors.Is(err, ErrNoUpdateAvailable) {
 			// Not returned: the manager would retry at once; the next check retries.
 			log.Warningf("updates/%s: automatic update failed: %s", u.cfg.Name, err)
@@ -176,12 +270,14 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 			case !errors.Is(err, ErrSameIndex):
 				log.Warningf("updates/%s: not offering update: %s", u.cfg.Name, err)
 			}
+			u.clearApproval()
 			u.setStagedState(ProgressReady)
 			return false, false, nil
 		}
 	}
 
-	if current != nil && !corrupted && !intelProgressMetered() && u.downloadedSinceInstall() {
+	updateUnasked := current != nil && !corrupted && u.downloadedSinceInstall()
+	if !intelProgressMetered() && (updateUnasked || u.approvalPending()) {
 		return false, true, nil
 	}
 

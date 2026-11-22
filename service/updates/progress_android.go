@@ -52,6 +52,9 @@ type progressTracker struct {
 	// backgroundCheckFailures counts background index checks that failed in
 	// a row. A successful check resets it.
 	backgroundCheckFailures atomic.Int32
+	// approvedRetryDelay is the last wait, in nanoseconds, before an approved
+	// download that failed was tried again, or 0 before the first retry.
+	approvedRetryDelay atomic.Int64
 }
 
 // Progress is byte-level intel download status for HTTP clients.
