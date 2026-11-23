@@ -4,12 +4,14 @@ package updates
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -305,5 +307,47 @@ func TestPartialDownloadsArePrunedAndCleared(t *testing.T) {
 	u.endProgress(nil)
 	if _, err := os.Stat(part); !os.IsNotExist(err) {
 		t.Fatal("partial downloads left after an applied update")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestDownloadRetriesFailedLookup(t *testing.T) { //nolint:paralleltest // Replaces package-level retry waits.
+	prevWaits := lookupRetryWaits
+	lookupRetryWaits = []time.Duration{5 * time.Millisecond, 5 * time.Millisecond}
+	t.Cleanup(func() { lookupRetryWaits = prevWaits })
+
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	baseTransport := srv.Client().Transport
+	u := &Updater{cfg: Config{Name: "Test", DownloadDirectory: t.TempDir()}}
+	d := NewDownloader(u, nil)
+	d.httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if attempts.Add(1) <= 2 {
+			return nil, &net.DNSError{
+				Err:  "no such host",
+				Name: "updates.safing.io",
+			}
+		}
+		return baseTransport.RoundTrip(req)
+	})
+
+	data, err := d.downloadData(t.Context(), srv.URL+"/index.json")
+	if err != nil {
+		t.Fatalf("expected download to succeed after lookup retry, got %v", err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("got %q, want ok", data)
+	}
+	if got := attempts.Load(); got != 3 {
+		t.Fatalf("attempts = %d, want 3", got)
 	}
 }

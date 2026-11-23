@@ -473,7 +473,7 @@ func pendingArtifactBytes(ctx context.Context, index *Index, installed map[strin
 			log.Debugf("updates: failed to build HEAD request for %s: %s", artifact.URLs[0], err)
 			return nil, 0, false
 		}
-		resp, err := client.Do(req)
+		resp, err := doWithLookupRetry(&client, req)
 		if err != nil {
 			log.Debugf("updates: failed to size artifact %s: %s", artifact.URLs[0], err)
 			return nil, 0, false

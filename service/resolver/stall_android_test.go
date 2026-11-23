@@ -83,6 +83,66 @@ func TestTCPResolverKeepsConnectionForOneSlowAnswer(t *testing.T) { //nolint:par
 	}
 }
 
+// TestTCPResolverRetriesQueryWhenConnectionCloses checks that when an active
+// TCP connection is closed by the remote server as a query arrives, the query
+// reconnects once and succeeds instead of returning ErrFailure.
+func TestTCPResolverRetriesQueryWhenConnectionCloses(t *testing.T) { //nolint:paralleltest // Replaces package-level settings.
+	useShortRequestTimeout(t)
+
+	server, serverPort := listenTCP(t)
+	accepted := new(atomic.Int32)
+	go func() {
+		for {
+			raw, err := server.Accept()
+			if err != nil {
+				return
+			}
+			conn := &dns.Conn{Conn: raw}
+			number := int(accepted.Add(1))
+			go func() {
+				defer func() { _ = conn.Close() }()
+				for {
+					query, err := conn.ReadMsg()
+					if err != nil {
+						return
+					}
+					name := query.Question[0].Name
+					if number == 1 && name == "closed.example." {
+						// Close the first connection without replying, as when
+						// an idle upstream connection is closed by the server.
+						return
+					}
+					reply := new(dns.Msg)
+					reply.SetReply(query)
+					reply.Answer = append(reply.Answer, &dns.A{
+						Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+						A:   net.IPv4(192, 0, 2, 7),
+					})
+					if err := conn.WriteMsg(reply); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+
+	tr := newStallTestResolver(serverPort)
+	if _, err := tr.Query(t.Context(), &Query{FQDN: "warm.example.", QType: dns.Type(dns.TypeA)}); err != nil {
+		t.Fatalf("warm-up query failed: %v", err)
+	}
+
+	rrCache, err := tr.Query(t.Context(), &Query{FQDN: "closed.example.", QType: dns.Type(dns.TypeA)})
+	if err != nil {
+		t.Fatalf("expected query to succeed after reconnecting, got %v", err)
+	}
+	if len(rrCache.Answer) != 1 {
+		t.Errorf("expected one answer, got %d", len(rrCache.Answer))
+	}
+	if got := accepted.Load(); got != 2 {
+		t.Errorf("expected 2 connections, got %d", got)
+	}
+}
+
 // useShortRequestTimeout shortens the query timeout and lets the resolver
 // pick any local port for the duration of the test.
 func useShortRequestTimeout(t *testing.T) {

@@ -3,6 +3,7 @@
 package resolver
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,4 +59,10 @@ func (tr *TCPResolver) tcpReplyTimedOut(trc *tcpResolverConn) {
 		defaultRequestTimeout,
 	)
 	_ = trc.conn.Close()
+}
+
+// retryClosedConn reports whether a query whose existing TCP/TLS connection
+// closed before replying should redial once on a fresh connection.
+func (tr *TCPResolver) retryClosedConn(ctx context.Context) bool {
+	return ctx.Err() == nil && (module == nil || !module.mgr.IsDone())
 }

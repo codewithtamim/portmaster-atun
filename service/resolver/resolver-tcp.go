@@ -230,40 +230,13 @@ func (tr *TCPResolver) getOrCreateResolverConn(ctx context.Context) (*tcpResolve
 func (tr *TCPResolver) Query(ctx context.Context, q *Query) (*RRCache, error) {
 	queryStarted := time.Now()
 
-	// Get resolver connection.
-	resolverConn, err := tr.getOrCreateResolverConn(ctx)
+	tq, reply, err := tr.queryOnce(ctx, q)
+	if err == nil && reply == nil && tr.retryClosedConn(ctx) {
+		queryStarted = time.Now()
+		tq, reply, err = tr.queryOnce(ctx, q)
+	}
 	if err != nil {
 		return nil, err
-	}
-
-	// Create query request.
-	tq := &tcpQuery{
-		Query:    q,
-		Response: make(chan *dns.Msg),
-	}
-
-	// Submit query request to live connection.
-	select {
-	case resolverConn.queries <- tq:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-module.mgr.Done():
-		return nil, ErrShuttingDown
-	case <-time.After(defaultRequestTimeout):
-		return nil, ErrTimeout
-	}
-
-	// Wait for reply.
-	var reply *dns.Msg
-	select {
-	case reply = <-tq.Response:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-module.mgr.Done():
-		return nil, ErrShuttingDown
-	case <-time.After(defaultRequestTimeout):
-		tr.tcpReplyTimedOut(resolverConn)
-		return nil, ErrTimeout
 	}
 
 	// Check if we have a reply.
@@ -283,6 +256,46 @@ func (tr *TCPResolver) Query(ctx context.Context, q *Query) (*RRCache, error) {
 
 	// Create RRCache from reply and return it.
 	return tq.MakeCacheRecord(reply, tr.resolver.Info), nil
+}
+
+func (tr *TCPResolver) queryOnce(ctx context.Context, q *Query) (*tcpQuery, *dns.Msg, error) {
+	// Get resolver connection.
+	resolverConn, err := tr.getOrCreateResolverConn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Create query request.
+	tq := &tcpQuery{
+		Query:    q,
+		Response: make(chan *dns.Msg),
+	}
+
+	// Submit query request to live connection.
+	select {
+	case resolverConn.queries <- tq:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case <-module.mgr.Done():
+		return nil, nil, ErrShuttingDown
+	case <-time.After(defaultRequestTimeout):
+		return nil, nil, ErrTimeout
+	}
+
+	// Wait for reply.
+	var reply *dns.Msg
+	select {
+	case reply = <-tq.Response:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	case <-module.mgr.Done():
+		return nil, nil, ErrShuttingDown
+	case <-time.After(defaultRequestTimeout):
+		tr.tcpReplyTimedOut(resolverConn)
+		return nil, nil, ErrTimeout
+	}
+
+	return tq, reply, nil
 }
 
 // ForceReconnect forces the resolver to re-establish the connection to the server.

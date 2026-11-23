@@ -18,6 +18,10 @@ func (u *Updater) endProgress(error) {}
 // resumeRequest returns 0: desktop always downloads a file from the start.
 func (d *Downloader) resumeRequest(*http.Request, string) int64 { return 0 }
 
+func (d *Downloader) doRequest(req *http.Request) (*http.Response, error) {
+	return d.httpClient.Do(req)
+}
+
 func (d *Downloader) resumeRefused(*http.Response, string, int64) bool { return false }
 
 func downloadFromStart(ctx context.Context) context.Context { return ctx }

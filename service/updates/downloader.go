@@ -235,7 +235,7 @@ func (d *Downloader) downloadData(ctx context.Context, url string) ([]byte, erro
 	offset := d.resumeRequest(req, url)
 
 	// Start request with shared http client.
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed a get file request to: %w", err)
 	}

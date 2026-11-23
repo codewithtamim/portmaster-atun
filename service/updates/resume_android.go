@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,45 @@ import (
 
 	"github.com/safing/portmaster/base/log"
 )
+
+// lookupRetryWaits spaces retries past nameserver's negative lookup cache
+// when a download starts right as the tunnel or upstream resolver comes up.
+var lookupRetryWaits = []time.Duration{
+	1200 * time.Millisecond,
+	2 * time.Second,
+	3 * time.Second,
+}
+
+func isLookupError(err error) bool {
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr)
+}
+
+func (d *Downloader) doRequest(req *http.Request) (*http.Response, error) {
+	return doWithLookupRetry(&d.httpClient, req)
+}
+
+func doWithLookupRetry(client *http.Client, req *http.Request) (*http.Response, error) {
+	resp, err := client.Do(req)
+	if err == nil || !isLookupError(err) {
+		return resp, err
+	}
+	ctx := req.Context()
+	for _, wait := range lookupRetryWaits {
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+		resp, err = client.Do(req.Clone(ctx))
+		if err == nil || !isLookupError(err) {
+			return resp, err
+		}
+	}
+	return nil, err
+}
 
 // partialMaxAge drops a half-finished download nobody resumed, for example
 // after the index moved on to new files. The age is taken from the validator
