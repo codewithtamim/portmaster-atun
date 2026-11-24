@@ -210,10 +210,10 @@ func New(instance instance, name string, cfg Config) (*Updater, error) {
 	module.upgradeWorkerMgr = m.NewWorkerMgr("upgrader", module.upgradeWorker, nil)
 
 	// Load index.
-	index, err := LoadIndex(filepath.Join(cfg.Directory, cfg.IndexFile), cfg.Platform, cfg.Verify)
+	index, err := module.loadInstalledIndex(filepath.Join(cfg.Directory, cfg.IndexFile))
 	if err == nil {
 		// Verify artifacts.
-		if err := index.VerifyArtifacts(cfg.Directory); err != nil {
+		if err := module.verifyInstalled(index); err != nil {
 			module.corruptedInstallation = fmt.Errorf("invalid artifact: %w", err)
 		}
 

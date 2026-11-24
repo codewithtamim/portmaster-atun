@@ -211,8 +211,8 @@ func (u *Updater) adoptBundledIntel() bool {
 	}
 
 	indexPath := filepath.Join(u.cfg.Directory, u.cfg.IndexFile)
-	if index, err := LoadIndex(indexPath, u.cfg.Platform, u.cfg.Verify); err == nil && len(index.Artifacts) > 0 {
-		if verifyErr := index.VerifyArtifacts(u.cfg.Directory); verifyErr == nil {
+	if index, err := u.loadInstalledIndex(indexPath); err == nil && len(index.Artifacts) > 0 {
+		if verifyErr := u.verifyInstalled(index); verifyErr == nil {
 			u.indexLock.Lock()
 			u.index = index
 			u.corruptedInstallation = nil
@@ -335,6 +335,10 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 	if u.adoptBundledIntel() {
 		return false, false, nil
 	}
+	if u.corruptedInstallation == nil && u.geoIPMissing() {
+		// As after a restart: a GeoIP download that failed is repaired.
+		u.corruptedInstallation = errors.New("GeoIP is needed but not installed")
+	}
 	corrupted := u.corruptedInstallation != nil
 	u.indexLock.Lock()
 	installed := u.index != nil && len(u.index.Artifacts) > 0
@@ -388,7 +392,14 @@ func (u *Updater) stageIntel(w *mgr.WorkerCtx) (repair, update bool, err error) 
 		return false, true, nil
 	}
 
-	sizes, total, known := pendingArtifactBytes(w.Ctx(), downloader.index, installedChecksums(current, corrupted))
+	present := installedChecksums(current, corrupted)
+	for _, artifact := range downloader.index.Artifacts {
+		// Not downloaded, so not part of the size to approve.
+		if u.skipsArtifact(artifact) {
+			present[artifact.SHA256] = true
+		}
+	}
+	sizes, total, known := pendingArtifactBytes(w.Ctx(), downloader.index, present)
 	if u.forcePending.Load() {
 		return false, false, nil
 	}

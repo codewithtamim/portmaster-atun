@@ -253,6 +253,12 @@ func (e *Entity) getLocation(ctx context.Context) {
 			return
 		}
 
+		// Without GeoIP installed every lookup fails, so it is not tried.
+		if !geoip.Available(e.MatchIP()) {
+			e.LocationError = "geoip database not installed"
+			return
+		}
+
 		// get location data
 		loc, err := geoip.GetLocation(e.MatchIP())
 		if err != nil {

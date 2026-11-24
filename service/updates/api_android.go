@@ -44,6 +44,17 @@ func (u *Updater) registerIntelAPI() error {
 		return err
 	}
 
+	if err := api.RegisterEndpoint(api.Endpoint{
+		Name:        "Download GeoIP",
+		Description: "Marks the GeoIP databases as needed and downloads them in the background if they are missing.",
+		Path:        "updates/intel/geoip",
+		Write:       api.PermitUser,
+		WriteMethod: http.MethodPost,
+		ActionFunc:  u.handleIntelGeoIP,
+	}); err != nil {
+		return err
+	}
+
 	u.adoptBundledIntel()
 	return nil
 }
@@ -100,15 +111,47 @@ func (u *Updater) handleIntelForceUpdate(_ *api.Request) (string, error) {
 	// (mobile data) networks: the automatic path defers on metered, but a
 	// manual retry must proceed.
 	// HTTP must not wait for the full download: the dashboard polls progress.
-	if !u.forcePending.CompareAndSwap(false, true) {
+	if !u.startIntelDownload(false) {
 		return "Intel update already started.", nil
+	}
+	return "Intel update started.", nil
+}
+
+// handleIntelGeoIP is called when the user turns on SPN, logs in or adds a
+// country rule, which all need GeoIP. The download starts without asking:
+// the user just chose something that needs it.
+func (u *Updater) handleIntelGeoIP(_ *api.Request) (string, error) {
+	u.noteGeoIPWanted()
+	if u.geoIPInstalled(true) {
+		return "GeoIP is installed.", nil
+	}
+	if !u.startIntelDownload(true) {
+		// The running download may have passed GeoIP already.
+		u.geoIPRequested.Store(true)
+		return "GeoIP download queued.", nil
+	}
+	return "GeoIP download started.", nil
+}
+
+// startIntelDownload downloads the intel update in the background and reports
+// false when a download is already running. With reinstall, a server release
+// that is the installed one is installed again: that copies the files already
+// in place and downloads only the missing ones, such as GeoIP.
+func (u *Updater) startIntelDownload(reinstall bool) bool {
+	if !u.forcePending.CompareAndSwap(false, true) {
+		return false
 	}
 	u.noteApproval()
 	// Set before returning, so a client polling after this request never reads
 	// the state from before it.
 	u.setProgressState(ProgressChecking)
 	u.m.Go("force intel update", func(w *mgr.WorkerCtx) error {
-		defer u.forcePending.Store(false)
+		defer func() {
+			u.forcePending.Store(false)
+			if u.geoIPRequested.Swap(false) && !u.geoIPInstalled(true) {
+				u.startIntelDownload(true)
+			}
+		}()
 
 		finished := u.attemptsFinished.Load()
 		err := u.waitForRunningUpdate(w.Ctx())
@@ -130,6 +173,11 @@ func (u *Updater) handleIntelForceUpdate(_ *api.Request) (string, error) {
 		}
 		if err == nil {
 			err = u.updateAndUpgrade(w, u.getIndexURLsWithLock(), false, true)
+			// Only the same release is installed again, so an older index
+			// served from a stale cache is never installed over a newer one.
+			if reinstall && errors.Is(err, ErrSameIndex) {
+				err = u.updateAndUpgrade(w, u.getIndexURLsWithLock(), true, true)
+			}
 		}
 		// updateAndUpgrade reports nothing when it refuses to start.
 		if u.attemptsFinished.Load() == finished {
@@ -145,7 +193,7 @@ func (u *Updater) handleIntelForceUpdate(_ *api.Request) (string, error) {
 		}
 		return nil
 	})
-	return "Intel update started.", nil
+	return true
 }
 
 // waitForRunningUpdate waits out a background check, which holds the update

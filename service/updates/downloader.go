@@ -156,6 +156,10 @@ artifacts:
 			log.Debugf("updates/%s: failed to copy existing file %s: %s", d.u.cfg.Name, artifact.Filename, err)
 		}
 
+		if d.u.skipsArtifact(artifact) {
+			continue artifacts
+		}
+
 		// Check if the artifact has download URLs.
 		if len(artifact.URLs) == 0 {
 			return fmt.Errorf("artifact %s is missing download URLs", artifact.Filename)

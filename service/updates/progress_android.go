@@ -56,6 +56,9 @@ type progressTracker struct {
 	// approvedRetryDelay is the last wait, in nanoseconds, before an approved
 	// download that failed was tried again, or 0 before the first retry.
 	approvedRetryDelay atomic.Int64
+	// geoIPRequested is set when GeoIP was asked for while another download
+	// ran, so it is downloaded once that one ends.
+	geoIPRequested atomic.Bool
 }
 
 // Progress is byte-level intel download status for HTTP clients.

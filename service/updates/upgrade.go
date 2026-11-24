@@ -114,6 +114,12 @@ func (u *Updater) upgradeMoveFiles(downloader *Downloader) error {
 	for _, artifact := range downloader.index.Artifacts {
 		src = filepath.Join(u.cfg.DownloadDirectory, artifact.Filename)
 		dst = filepath.Join(u.cfg.Directory, artifact.Filename)
+		// A file the download left out stays out of the installation.
+		if u.skipsArtifact(artifact) {
+			if _, statErr := os.Stat(src); errors.Is(statErr, os.ErrNotExist) {
+				continue
+			}
+		}
 		err = u.moveFile(src, dst, artifact.SHA256, artifact.GetFileMode())
 		if err != nil {
 			return fmt.Errorf("failed to move file %s: %w", artifact.Filename, err)
