@@ -83,6 +83,17 @@ func TestAndroidDNSResolverIsTheOperatingSystem(t *testing.T) {
 	}
 }
 
+// Location assistance downloads and DNS for hotspot clients also run under
+// Android's own UIDs without an app package.
+func TestAndroidGPSAndHotspotDNSAreTheOperatingSystem(t *testing.T) {
+	for _, uid := range []int{androidGPSUID, androidDNSTetherUID} {
+		p := &Process{UserID: uid}
+		if got := p.getSpecialProfileID(); got != profile.SystemProfileID {
+			t.Errorf("uid %d: profile %q, want %q", uid, got, profile.SystemProfileID)
+		}
+	}
+}
+
 func TestStoredAndroidSystemProcessIsKeptWithoutAppInfo(t *testing.T) { //nolint:paralleltest // process storage is global
 	aconn.RegisterAppInfoProvider(nil)
 

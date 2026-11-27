@@ -22,6 +22,12 @@ const (
 	// lookups for Android itself, such as checking that Private DNS works;
 	// apps' own lookups carry the app's UID.
 	androidDNSUID = 1051
+	// androidGPSUID is the UID of the location service (AID_GPS), which
+	// downloads location assistance data on some phones.
+	androidGPSUID = 1021
+	// androidDNSTetherUID is the UID that answers DNS for hotspot clients
+	// (AID_DNS_TETHER).
+	androidDNSTetherUID = 1052
 )
 
 // IsAndroidSystemUID reports whether uid is a service of Android itself, so
@@ -29,7 +35,11 @@ const (
 // resolver, it has no app package to look up. Root is left out: traffic of
 // root processes on a rooted phone stays unidentified.
 func IsAndroidSystemUID(uid int) bool {
-	return uid == androidSystemUID || uid == androidDNSUID
+	switch uid {
+	case androidSystemUID, androidDNSUID, androidGPSUID, androidDNSTetherUID:
+		return true
+	}
+	return false
 }
 
 // getSpecialProfileID returns the special profile ID for the app, if any.
